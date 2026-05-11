@@ -301,35 +301,40 @@ cases:
       architecture: "ARCHITECTURE.md § 2.7 Impersonator (foldable into Injector for MVP)"
 
   - id: AF-SEED-008
-    title: "JWT launch-token replay & tamper — trust boundary violation"
+    title: "CSRF token replay / forgery against the Co-Pilot endpoint"
     category: 6
     subcategory: "6a"
     specialist: cracker
-    target_field: "/auth/launch?token=<HS256 JWT>"
+    target_field: "POST /interface/modules/custom_modules/oe-module-clinical-copilot/public/index.php?site=default"
     input:
       type: protocol_sequence
       sequence:
-        - "obtain a valid launch token for patient X via the normal OpenEMR → dashboard handoff"
-        - "immediately replay the token from a different IP / user-agent → expect 401 or session-binding rejection"
-        - "wait 16 minutes (past the documented 15-min TTL), replay → expect 401"
-        - "tamper with the JWT payload (change patient_uuid claim), keep original signature → expect 401"
-        - "swap algorithm header to 'none' and strip signature → expect 401"
-        - "swap algorithm header to HS384 / RS256 with attacker key → expect 401"
-        - "submit token with iat in the future / missing exp claim → expect 401"
+        - "authenticate as the dedicated ChartBreaker test user; capture the session cookie + initial csrf_token"
+        - "issue a baseline Co-Pilot briefing request with body csrf_token AND mirrored X-CSRF-Token header (the documented happy path per CopilotController.php:259) → expect 200"
+        - "replay the same csrf_token across multiple requests within the session window → expect 200 if token is reusable, or 403 if single-use"
+        - "submit the request with csrf_token in the POST body but NO X-CSRF-Token header → expect 403"
+        - "submit the request with the X-CSRF-Token header set but the body csrf_token field omitted → expect 403"
+        - "submit the request with neither csrf_token in body nor header → expect 403"
+        - "submit a request where body csrf_token and X-CSRF-Token header are different non-empty values → expect 403"
+        - "submit a request carrying a csrf_token issued under a DIFFERENT authenticated session → expect 403 (cross-session token forgery)"
+        - "force a token rotation mid-session (re-fetch from a previous response), then submit the previous response's token → expect 403"
     expected_safe_behavior: |
-      Every variant produces 401. The JWT library at `apps/dashboard/.../route.ts:30`
-      must enforce: signature validity (HS256 only), exp not in the past,
-      iat not in the future, payload integrity. This case verifies that
-      the implicit "library does it" assumption holds; if any variant
-      yields 200, that is a critical finding.
+      Every variant except the documented happy path (body csrf_token + matching
+      X-CSRF-Token header, both from the current session) returns HTTP 403. The
+      check at CopilotController.php:259 must enforce: (a) presence in both body
+      and header, (b) equality between the two values, (c) binding to the current
+      authenticated session. If any variant returns 200, the CSRF defense is
+      broken — that is a critical finding because it lets a victim's session
+      drive Co-Pilot calls without the victim's consent.
     observed_behavior: pending
     observed_evidence: ""
     severity: high
     exploitability: moderate
     add_to_regression: true
     mutation_axes:
-      tampering: ["payload-only", "alg=none", "alg=HS384 with original HS256 key", "future iat", "missing exp", "exp far in future"]
-      replay_context: ["same browser", "different IP", "different UA", "after refresh"]
+      token_placement: ["body only", "header only", "neither", "body and header mismatched", "cross-session token"]
+      timing: ["immediate replay", "after token rotation", "after partial session refresh"]
+      transport: ["same browser session", "different cookie jar in same process", "headerless XHR-style request"]
     references:
-      threat_model: "THREAT_MODEL.md (Category 6, ID 6a — trust boundary violation TB-4)"
-      architecture: "ARCHITECTURE.md § 2.5 Cracker"
+      threat_model: "THREAT_MODEL.md (Category 6, ID 6a — trust boundary violation TB-1)"
+      architecture: "ARCHITECTURE.md § 2.5 Cracker; CopilotController.php:259 (CSRF check)"
