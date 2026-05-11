@@ -4,7 +4,7 @@
 #
 # This is a YAML document that describes the shape of each case. It is not
 # itself loaded by the platform — runtime validation is done by the Pydantic
-# models in agentforge/state.py. Keep this file in sync with those models
+# models in chartbreaker/state.py. Keep this file in sync with those models
 # when fields change.
 
 # ─────────────────────────────────────────────────────────────────────────────

@@ -1,6 +1,6 @@
 # `evals/results/`
 
-Per-run output files written by the AgentForge eval runner.
+Per-run output files written by the ChartBreaker eval runner.
 
 Filename convention: `YYYY-MM-DD-HH-MM-SS.yaml` (UTC).
 

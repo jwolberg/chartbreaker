@@ -1,6 +1,6 @@
 # evals/seed_cases.yaml
 #
-# Seed adversarial test cases for the AgentForge platform. These are the
+# Seed adversarial test cases for the ChartBreaker platform. These are the
 # canonical starting points — the Red Team specialists mutate from these
 # to find variants the target does not defend against.
 #

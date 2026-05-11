@@ -1,8 +1,8 @@
-# `/evals/` — AgentForge Adversarial Test Suite
+# `/evals/` — ChartBreaker Adversarial Test Suite
 
-> **Companion docs:** [`../THREAT_MODEL.md`](../THREAT_MODEL.md), [`../ARCHITECTURE.md`](../ARCHITECTURE.md).
+> **Companion docs:** [`../docs/THREAT_MODEL.md`](../docs/THREAT_MODEL.md), [`../docs/ARCHITECTURE.md`](../docs/ARCHITECTURE.md).
 
-This directory holds the AgentForge adversarial evaluation corpus. It is the
+This directory holds the ChartBreaker adversarial evaluation corpus. It is the
 canonical store that satisfies the Stage 3 hard gate: "a working test suite
 (./evals/) with results from at least three distinct attack categories."
 
@@ -69,21 +69,21 @@ Orchestrator cannot retire a case autonomously.
 
 ```bash
 # Run all seed cases against the live target (Stage 3 hard gate)
-agentforge run --seed-only
+chartbreaker run --seed-only
 
 # Run regression suite only (pinned cases)
-agentforge regress
+chartbreaker regress
 
 # Single case by ID
-agentforge run --case AF-SEED-002
+chartbreaker run --case AF-SEED-002
 
 # Dry run — no live calls, deterministic replay only
-agentforge run --seed-only --dry-run
+chartbreaker run --seed-only --dry-run
 ```
 
 Results are written to `evals/results/YYYY-MM-DD-HH-MM-SS.yaml` and
 appended to the observability store at
-`agentforge/observability/runs.sqlite`.
+`chartbreaker/observability/runs.sqlite`.
 
 ## Coverage at a glance (current)
 
