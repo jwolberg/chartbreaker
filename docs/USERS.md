@@ -93,7 +93,7 @@ These users never run a CLI command. They consume artifacts produced by the plat
 **Role context.** Owns the organizational decision of whether to trust an AI-assisted clinical workflow in production. Not in the code, not in the eval cases, but holds the budget and the risk register. Asks questions like "is the Co-Pilot more or less resilient than it was a quarter ago?" and "what's the worst-case exploit and how confident are we it's been fixed?"
 
 **Primary workflows.**
-- Quarterly review of the platform's posture: open the dashboard, look at the coverage matrix, look at the trend lines for verdict success rate per category, read the executive summaries of any `critical`-severity findings still open.
+- Quarterly review of the platform's posture: review the dashboard (operator-shared screen or recent screenshots — ChartBreaker is operator-internal with no public CISO-facing URL), look at the coverage matrix, look at the trend lines for verdict success rate per category, read the executive summaries of any `critical`-severity findings still open.
 - Approve or block deploys of the Co-Pilot to a wider clinical audience based on the regression-suite green/red state.
 - Decide whether ChartBreaker itself is trustworthy enough to gate deploys — i.e., is the platform's calibration tight enough, are its findings reproducible enough, and is the Judge's accuracy good enough to make automated gating defensible?
 - Sponsor the platform's resource allocation: API budget, dashboard hosting, operator headcount.

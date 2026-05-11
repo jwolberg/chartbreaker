@@ -6,6 +6,8 @@
 
 .claude/*
 !.claude/skills/
+.claude/skills/*
+!.claude/skills/plan/
 .codex
 AGENTS.md
 

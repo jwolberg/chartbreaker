@@ -28,7 +28,7 @@
 - **Hosting topology** (`PROJECT_STRATEGY.md` § Operating Model § Hosting Topology):
   - Operator laptop for interactive CLI runs
   - GitHub Actions cron for scheduled regression sweeps
-  - Small VM (Fly.io / Railway / $5 DO droplet) for the always-on read-only Streamlit dashboard
+  - **No public hosting for ChartBreaker.** Dashboard runs locally on operator's laptop (`localhost:8501`); the OpenEMR target is the only publicly addressable surface in the system.
   - **Hard rule:** ChartBreaker does *not* co-locate with the OpenEMR target VM.
 - **Hard constraints:**
   - Single-target invariant — target URL hardcoded in `config.py`; override requires both `--target-override` and `--i-understand-this-attacks-the-target` (`ARCHITECTURE.md` § Human Approval Gates).
@@ -185,7 +185,7 @@ Layer in the components `ARCHITECTURE.md` § MVP vs Final Cut marks as Final-onl
 - Coverage: ≥10 of ~20 subcategories with ≥1 live attempt; ≥5 attempts per attempted subcategory
 - Judge calibration ≥85% on `evals/judge_calibration.yaml`; halts below 70%
 - ≥3 `success` verdicts pinned in `evals/regression_cases.yaml`
-- Streamlit dashboard reachable at a public HTTPS URL
+- Streamlit dashboard renders all rubric-required views locally on `localhost:8501` (no public URL; ChartBreaker is operator-internal, only the OpenEMR target is publicly addressable)
 
 **Tickets**
 
@@ -278,7 +278,7 @@ Layer in the components `ARCHITECTURE.md` § MVP vs Final Cut marks as Final-onl
 ### Phase 3 — Final Polish (deadline: Fri 2026-05-15 noon)
 
 **Goal**
-Generate the Final-only submission artifacts: vulnerability reports from live findings, cost analysis, public dashboard URL, demo video, social post.
+Generate the Final-only submission artifacts: vulnerability reports from live findings, cost analysis, demo video recording the local dashboard, social post, and a CI-produced `runs.sqlite` uploaded as a GitHub release artifact for reviewer download.
 
 **Exit Criteria**
 - ≥3 vulnerability reports (`reports/AF-NNN-*.md`) with reproducible attack sequences
@@ -286,7 +286,7 @@ Generate the Final-only submission artifacts: vulnerability reports from live fi
 - Public HTTPS URL serving the dashboard
 - 3–5 min demo video published
 - Social post on X / LinkedIn tagging @GauntletAI
-- README updated with all public URLs
+- README updated with target URL, demo video link, social post link, and CI release-artifact URL (no ChartBreaker public URL by design)
 
 **Tickets**
 
@@ -304,29 +304,29 @@ Generate the Final-only submission artifacts: vulnerability reports from live fi
   - Acceptance criteria covered: `ASSIGNMENT.md` § Submission Requirements "AI Cost Analysis" row; `PROJECT_STRATEGY.md` § Success Criteria § Final "Cost analysis" row
   - Status: Todo
 
-- **P3-T3 — Deploy dashboard to a public HTTPS URL**
-  - Objective: Ship `dashboard.py` to Fly.io / Railway / a $5 DO droplet with a synced copy of `runs.sqlite`. Per `PROJECT_STRATEGY.md` § Operating Model § Hosting Topology (always-on observability dashboard).
-  - Files likely involved: `Dockerfile.dashboard`, `fly.toml` or equivalent, `README.md` (URL added)
-  - Depends on: P2-T11
-  - Acceptance criteria covered: `PROJECT_STRATEGY.md` § Success Criteria § Final "Observability dashboard live" row
+- **P3-T3 — Upload CI-produced `runs.sqlite` as a GitHub release artifact**
+  - Objective: After the Final-week regression sweeps complete in GitHub Actions, attach the CI-produced `runs.sqlite` (plus a redacted excerpt of `traces.jsonl`) to a GitHub release tag. Reviewers can download and SQL-query the same data the operator sees locally. **Replaces the original "deploy dashboard to public HTTPS URL" ticket** — the dashboard is local-only per the locked-in Operating Model.
+  - Files likely involved: `.github/workflows/regression-sweep.yml`, release artifact upload step
+  - Depends on: P2-T11 (dashboard exists locally), Phase-2 runtime sufficient to populate `runs.sqlite`
+  - Acceptance criteria covered: `PROJECT_STRATEGY.md` § Success Criteria § Final "Observability dashboard demonstrated" row (CI-produced `runs.sqlite` downloadable component)
   - Status: Todo
 
 - **P3-T4 — Demo video (3–5 min)**
-  - Objective: Three-act recording per `PROJECT_STRATEGY.md` § Demo & Social Plan: (1) manual jailbreak problem, (2) platform run with dashboard walkthrough, (3) regression re-run of a previously-pinned exploit.
+  - Objective: Three-act recording per `PROJECT_STRATEGY.md` § Demo & Social Plan: (1) manual jailbreak problem, (2) platform run with the **local** dashboard walkthrough on `localhost:8501`, (3) regression re-run of a previously-pinned exploit. The local dashboard is the answer to the rubric's observability questions — recorded on operator's laptop.
   - Files likely involved: video uploaded externally, link added to `README.md`
-  - Depends on: P3-T1, P3-T3 (platform must be running + producing artifacts to film)
+  - Depends on: P3-T1 (vuln reports exist to show); P2-T11 (local dashboard built)
   - Acceptance criteria covered: `ASSIGNMENT.md` § Submission Requirements "Demo Video" row
   - Status: Todo
 
 - **P3-T5 — Social post on X / LinkedIn tagging @GauntletAI**
-  - Objective: One paragraph + one dashboard screenshot. Drafted alongside README update. Per `PROJECT_STRATEGY.md` § Demo & Social Plan.
+  - Objective: One paragraph + one dashboard screenshot (from the local dashboard recorded in P3-T4). Drafted alongside README update. Per `PROJECT_STRATEGY.md` § Demo & Social Plan.
   - Files likely involved: external; link committed to `README.md`
-  - Depends on: P3-T3 (dashboard URL needed for screenshot)
+  - Depends on: P3-T4 (screenshot lifted from the demo recording)
   - Acceptance criteria covered: `ASSIGNMENT.md` § Submission Requirements "Social Post (Final only)" row
   - Status: Todo
 
-- **P3-T6 — README updates with public URLs**
-  - Objective: Update the README from P1-T1 with the public dashboard URL, demo video link, and social post link.
+- **P3-T6 — README final pass with reviewer links**
+  - Objective: Update the README from P1-T1 with: the deployed target URL (already known), the demo video link, the social post link, and the GitHub release URL pointing to the CI-produced `runs.sqlite` artifact. No public ChartBreaker URL — by design, ChartBreaker has no public surface.
   - Files likely involved: `README.md`
   - Depends on: P3-T3, P3-T4, P3-T5
   - Acceptance criteria covered: `ASSIGNMENT.md` § Submission Requirements "GitHub Repository" row
@@ -366,9 +366,9 @@ Generate the Final-only submission artifacts: vulnerability reports from live fi
 28. P2-T12 — Orchestrator + RedTeamLead narration (after P1-T14, P1-T15)
 29. P3-T1 — Vulnerability reports (after P2-T9 + runtime)
 30. P3-T2 — Cost analysis (after P1-T7 + runtime)
-31. P3-T3 — Deploy dashboard (after P2-T11)
-32. P3-T4 — Demo video (after P3-T1, P3-T3)
-33. P3-T5 — Social post (after P3-T3)
+31. P3-T3 — Upload CI runs.sqlite as a GitHub release artifact (after P2-T11 + Phase-2 runtime)
+32. P3-T4 — Demo video, local dashboard recorded (after P3-T1, P2-T11)
+33. P3-T5 — Social post (after P3-T4)
 34. P3-T6 — README final updates (after P3-T3, P3-T4, P3-T5)
 
 ---

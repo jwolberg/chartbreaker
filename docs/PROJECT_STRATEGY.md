@@ -164,29 +164,53 @@ The PRD-shaped questions about *where ChartBreaker runs*, *how operators interac
 
 ### Hosting Topology (Tiered)
 
-ChartBreaker is not a single deployable artifact — it is three operational surfaces, each placed where the latency, cost, and trust model fit best.
+ChartBreaker is not a single deployable artifact — it is two operational surfaces (laptop + CI), neither of which is publicly exposed. The rubric's "deployed application" requirement applies to the OpenEMR target, not to ChartBreaker itself; ChartBreaker is an internal security tool whose surfaces stay private.
 
 | Component | Where it runs | Why there | Cost |
 |---|---|---|---|
-| Operator-driven campaigns (interactive CLI runs) | **Operator laptop** | CLI tool with full access to the operator's credentials and SQLite store; no reason to push to a server during MVP | $0 |
-| Scheduled regression sweeps | **GitHub Actions cron** (or any CI) | Matches the rubric's "deploy-triggered regression" pattern; secrets in repo-level settings; audit trail in Actions logs; concurrency-1 to avoid clobbering `runs.sqlite` | Free at MVP volume |
-| Always-on observability dashboard | **Small VM** (Fly.io, Railway, or a $5 DigitalOcean droplet) | Needs a public HTTPS URL for the CISO/reviewer audience; pulls from a synced copy of `runs.sqlite` | ~$5–10/month |
-| OpenEMR Clinical Co-Pilot (target) | Existing GCE VM | Out-of-scope for ChartBreaker hosting; documented under § Target Deployment in `ARCHITECTURE.md` | — |
+| Operator-driven campaigns (interactive CLI runs) | **Operator laptop** | CLI tool with full access to the operator's credentials and SQLite store; no reason to push to a server during MVP or Final | $0 |
+| Local observability dashboard | **Operator laptop** (`streamlit run chartbreaker/observability/dashboard.py` on `localhost:8501`) | Reads the same `observability/runs.sqlite` the CLI writes. Renders coverage, verdicts over time, cost per agent, open reports. Used by the operator during triage and screenshotted/recorded for the Final demo. | $0 |
+| Scheduled regression sweeps | **GitHub Actions cron** (or any CI) | Matches the rubric's "deploy-triggered regression" pattern; secrets in repo-level settings; audit trail in Actions logs; concurrency-1 to avoid clobbering `runs.sqlite`. CI-produced `runs.sqlite` is uploaded as a release artifact for reviewer download. | Free at MVP/Final volume |
+| OpenEMR Clinical Co-Pilot (target) | Existing GCE VM | The *only* publicly addressable surface in the system. Out-of-scope for ChartBreaker hosting; documented under § Target Deployment in `ARCHITECTURE.md`. | — |
 
-**Hard rule: ChartBreaker does not co-locate with the target.** Even though both VMs are operated by the same person, the threat-model posture is "external adversary" and co-location accidentally grants ChartBreaker network privileges it should not have. The single-target invariant in `ARCHITECTURE.md` § Human Approval Gates is the technical enforcement of this posture.
+**Hard rule: ChartBreaker does not co-locate with the target.** Even though both could in principle run on the same operator-controlled box, the threat-model posture is "external adversary" and co-location accidentally grants ChartBreaker network privileges it should not have. The single-target invariant in `ARCHITECTURE.md` § Human Approval Gates is the technical enforcement of this posture.
 
-**MVP submission specifics:** laptop CLI + `runs.sqlite` artifact committed to a private branch is sufficient. **Final submission:** spin up the dashboard with a public URL — it is the most demo-able artifact and is the answer to the rubric's observability questions.
+**Why no public dashboard.** The rubric's "Deployed Application" requirement ([`ASSIGNMENT.md`](./ASSIGNMENT.md) § Submission Requirements) reads *"Publicly accessible **target** system. … the adversarial platform must be running live tests against the deployed target."* The target is what must be public; the adversarial platform is not. A public dashboard would add hosting cost, a data-residency story for attack payloads, and an auth surface for write/read operations — all friction we don't need to pay for. Reviewer-facing artifacts (dashboard screenshots, demo video, CI-produced `runs.sqlite`) are sufficient to satisfy the rubric's observability questions without exposing the platform externally.
+
+**Submission specifics:** for both MVP and Final, the operator runs the CLI and the local dashboard on their laptop; CI runs scheduled regression sweeps; the demo video shows the local dashboard live; the README links to the CI-produced `runs.sqlite` artifact for reviewers who want to query the data themselves.
 
 ### Interface Strategy — CLI Primary, Read-Only Dashboard, No Control GUI
 
 | Surface | Built for MVP? | Tech | Justification |
 |---|---|---|---|
 | CLI — `chartbreaker run / seed / regress / report` | ✅ Yes, primary | Click or Typer | Scriptable, fits CI, audit trail in shell history, what security operators expect |
-| Observability dashboard (read-only) | ✅ Yes, required | Streamlit reading `observability/runs.sqlite` | Renders coverage, verdicts over time, cost per agent, open reports. ~200 lines. The CISO-facing artifact. |
+| Observability dashboard (read-only, **local-only**) | ✅ Yes, required | Streamlit reading `observability/runs.sqlite` on `localhost:8501` | Renders coverage, verdicts over time, cost per agent, open reports. ~200 lines. Reviewer-facing via demo video + screenshots, not a public URL. |
 | Interactive GUI for triggering campaigns | ❌ No | — | Adds attack surface, auth complexity, schedule risk. CLI + cron covers the use case. |
 | Public HTTP API for external integration | ❌ No (for now) | — | YAGNI for Week 3. Documented as a future-state non-goal. |
 
-The observability dashboard is **not optional** — the rubric explicitly demands answers to "What is each agent doing, and in what order?" and "How much did this run cost?" Streamlit reading SQLite is the cheapest defensible path.
+The observability dashboard is **not optional** — the rubric explicitly demands answers to "What is each agent doing, and in what order?" and "How much did this run cost?" Streamlit reading SQLite on the operator's laptop is the cheapest defensible path. *Local-only* satisfies the rubric because the rubric demands the dashboard exists and answers those questions; it does not demand the dashboard be publicly hosted.
+
+### Visibility & Traceability — How the Operator Sees What Agents Did
+
+Because ChartBreaker is local-only, there is no dev/prod split — every run writes to the same shape of artifacts in the same code paths, regardless of whether it was operator-driven from the CLI or CI-driven from GitHub Actions. The operator's question *"what did the agents just do?"* is answered the same way in every environment.
+
+| Surface | What's in it | How the operator queries it | Where it lives |
+|---|---|---|---|
+| **`observability/runs.sqlite`** | Eight tables: `runs`, `campaigns`, `attempts`, `agent_events`, `target_responses`, `judge_verdicts`, `findings`, `costs`. Every agent state-transition writes a row to `agent_events`; every target call writes `target_responses` + `costs`; every verdict writes `judge_verdicts`. | (a) Streamlit dashboard at `localhost:8501`; (b) raw SQL via `sqlite3 observability/runs.sqlite '.tables'`; (c) Python REPL — `sqlite3.connect(...)`. | Repo-root `observability/` on the operator's laptop. CI-produced copy uploaded as a GitHub release artifact after every scheduled sweep. |
+| **`observability/traces.jsonl`** | Append-only event log; one JSON object per agent state-transition. Same data as `agent_events` but in a tail-friendly format for live debugging. | `tail -f observability/traces.jsonl \| jq` for live watching during a run; `jq 'select(.agent == "judge")'` for per-agent filtering. | Same path as the SQLite file. |
+| **LangSmith** (optional, set `LANGCHAIN_API_KEY`) | Hosted cross-agent traces per LangGraph state transition: full inputs/outputs, latency per node, cost per node. | Browser at smith.langchain.com → project view. | LangSmith's hosted infra (third-party); the SQLite + JSONL remain the canonical local store. |
+| **CLI replay** | `chartbreaker run --replay <run_id>` re-executes a recorded run deterministically against the stored fixtures. | CLI flag; output diffed against the original verdict. | Reads from `observability/runs.sqlite`. |
+
+**What this guarantees for the operator:**
+- Every autonomous decision the platform made is reconstructable from `runs.sqlite` + `traces.jsonl` without re-running anything.
+- Every LLM call records `{role, provider, model, prompt_tokens, completion_tokens, usd}` so cost attribution is per-agent, not just per-run.
+- Every Judge verdict pins the target model version; a future change to the Co-Pilot does not silently invalidate yesterday's verdict.
+- The CI-produced `runs.sqlite` is the reviewer-facing evidence package: a reviewer who wants to verify "ChartBreaker found exploit AF-001 against target version X" downloads the file and runs the same SQL queries the operator runs locally.
+
+**What this does NOT guarantee (deliberate non-goals):**
+- No live monitoring or alerting — ChartBreaker is operator-driven, not always-on.
+- No remote write access — the dashboard is read-only and local-only; there is no surface that accepts external writes to `runs.sqlite`.
+- No PHI capture — fixture patients are synthetic; `redactor.py` runs pre-insert as a defense-in-depth measure.
 
 ### Database — Beyond the MVP SQLite Choice
 
@@ -240,7 +264,7 @@ The rubric grades thoroughness and defensibility, but "done" still needs measura
 | Confirmed exploits → regression-pinned | ≥3 distinct `success` verdicts converted to `evals/regression_cases.yaml` entries | `regression.py` audit log |
 | Vulnerability reports drafted | ≥3 distinct `reports/AF-NNN-*.md` files (rubric minimum) | Filesystem |
 | Cost analysis | `COST_ANALYSIS.md` at 100 / 1K / 10K / 100K with architectural implications per tier | Document review |
-| Observability dashboard live | Public HTTPS URL serving the read-only Streamlit dashboard | Reviewer visit |
+| Observability dashboard demonstrated | Local Streamlit dashboard renders all rubric-required views; demo video shows it live; README links to a CI-produced `runs.sqlite` reviewers can download and inspect | Demo-video review + README links |
 | Demo video | 3–5 min showing the loop running live against the deployed target | Recording uploaded |
 | Social post | One post on X or LinkedIn tagging @GauntletAI | Link committed to repo |
 
@@ -278,7 +302,7 @@ The individual agent failure modes are documented per-agent in `ARCHITECTURE.md`
 | Schema-incompatible upgrade attempted | Migration test on startup | Refuse to start until migration is applied; never silently mutate `runs.sqlite`. |
 | Local-vs-CI clock skew | Comparing `git_sha` of regression case vs target | Halt; cases must be replayed against the target version they were pinned to (or explicitly re-pinned). |
 
-**Platform availability SLO:** none in the formal sense. ChartBreaker is operator-driven; "down" means the operator does not run it. The dashboard is the only always-on surface, and a 24-hour outage on it is a P3, not P1.
+**Platform availability SLO:** none in the formal sense. ChartBreaker is operator-driven and has no always-on public surface; "down" means the operator does not run it. The local dashboard depends on the operator's laptop being on — that's not a service-level concern.
 
 ---
 
@@ -317,7 +341,7 @@ The platform has its own version, its own changelog, and its own upgrade path �
 |---|---|
 | Demo video (3–5 min) | Three-act structure: (1) the problem — show a manual jailbreak attempt + how slow / unrepeatable it is; (2) the platform — run `chartbreaker run --campaign cat-1b-injection` and walk through Orchestrator → Injector → Target → Judge → Scribe in the dashboard; (3) the regression — re-run a previously-pinned exploit and show it still fails (or passes if the Co-Pilot fixed it). Record in OBS or Loom; upload to YouTube unlisted. |
 | Social post | One post on X or LinkedIn (operator preference) tagging @GauntletAI. One paragraph + one screenshot of the dashboard. Drafted alongside the README. |
-| Reviewer-facing artifacts | Public dashboard URL, repo URL, deployed target URL, demo video link — all linked from the README's top section. |
+| Reviewer-facing artifacts | Repo URL, deployed target URL, demo video link, and a GitHub release URL pointing at a CI-produced `runs.sqlite` reviewers can download and SQL-query — all linked from the README's top section. No public ChartBreaker URL by design (only the OpenEMR target is publicly addressable). |
 
 ---
 
@@ -334,7 +358,7 @@ Ordered by deadline pressure, with owner / dependency notes.
 | 5 | Verifier replay (Python ports of `SourceAttributionVerifier` + `DomainConstraintVerifier`) | Judge verdicts | 2–3 hr | Final |
 | 6 | Replace/rescope `AF-SEED-008` (currently targets out-of-scope dashboard JWT) | Eval-suite integrity | 30 min | MVP |
 | 7 | SQLite schema + JSONL trace writer | All observability claims | 2 hr | MVP |
-| 8 | Streamlit dashboard (read-only) | Final demo + CISO-facing artifact | 2–3 hr | Final |
+| 8 | Streamlit dashboard (read-only, local-only at `localhost:8501`) | Final demo + reviewer-facing screenshots | 2–3 hr | Final |
 | 9 | `COST_ANALYSIS.md` at 100 / 1K / 10K / 100K | Final submission | 2 hr | Final |
 | 10 | ≥3 vulnerability reports (`reports/AF-NNN-*.md`) drafted from live findings | Final submission | depends on platform working | Final |
 | 11 | Judge calibration set fleshed out + `tests/test_judge_calibration.py` green | Final submission credibility | 2 hr | Final |
