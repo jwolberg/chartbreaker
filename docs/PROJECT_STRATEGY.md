@@ -321,6 +321,16 @@ These are explicit, written-down decisions about what ChartBreaker *will not* do
 
 ---
 
+## Deliberately Deferred (post-Final exploration)
+
+These were considered and explicitly declined for the Gauntlet Week-3 build, with the rationale captured here so the decision is recoverable rather than re-litigated:
+
+- **Hosted Postgres backing the observability store (instead of local SQLite).** Operationally appealing — eliminates the dev/prod sync problem, gives one canonical store both laptop and CI write to. Deferred because: (a) the SQLite + CI release-artifact pattern already satisfies every rubric observability requirement, (b) the DBAL abstraction work is 3–5 hours on the critical path before MVP, (c) hosted Postgres adds a recurring cost, secrets-rotation burden, and a new attack surface that the threat model would have to absorb. Revisit if a future operator needs multi-machine concurrent writes or a hosted-DB-backed dashboard.
+- **Public-facing vulnerability feed / findings API consumable by an agent inside OpenEMR.** Architecturally novel — turns ChartBreaker from an external adversary into a vulnerability-management vendor to its target, with OpenEMR's remediation logic gaining a dependency on ChartBreaker's output. Deferred because: (a) a publicly-readable database of unpatched findings is itself a P0 attack surface (pre-disclosure vulnerability data is more dangerous than the bugs themselves), (b) the only safe form requires auth-gated access + a defined consumer contract + a new trust boundary in `THREAT_MODEL.md` (TB-8) describing how OpenEMR authenticates the feed, (c) the architectural shift conflicts with the current "external adversary" posture that the entire platform is built around. Revisit as a Phase-2 product expansion if there is demand for closing the discover-to-remediate loop inside one trust boundary.
+- **Datasette-served read-only SQLite over auth-gated HTTPS** as a middle-ground for live CISO access. Cheap (~$5/mo) and avoids the pre-disclosure-data leak by gating access with HTTP basic auth or Cloudflare Access. Deferred because the CI release-artifact pattern already gives the CISO downloadable + queryable data, and quarterly CISO review doesn't need live-ish updates. Revisit if the CISO persona evolves into a daily-active user.
+
+---
+
 ## Release & Change Management
 
 The platform has its own version, its own changelog, and its own upgrade path — separate from the Co-Pilot target's release cycle.
