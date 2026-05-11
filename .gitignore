@@ -4,7 +4,8 @@
 # environment vars
 .env
 
-.claude
+.claude/*
+!.claude/skills/
 .codex
 AGENTS.md
 
