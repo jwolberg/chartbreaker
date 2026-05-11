@@ -1,0 +1,99 @@
+# evals/schema.yaml
+# Documentation-only schema for adversarial test cases in seed_cases.yaml,
+# regression_cases.yaml, and judge_calibration.yaml.
+#
+# This is a YAML document that describes the shape of each case. It is not
+# itself loaded by the platform — runtime validation is done by the Pydantic
+# models in agentforge/state.py. Keep this file in sync with those models
+# when fields change.
+
+# ─────────────────────────────────────────────────────────────────────────────
+# seed_cases.yaml + regression_cases.yaml record shape
+# ─────────────────────────────────────────────────────────────────────────────
+case:
+  id: string                  # AF-SEED-NNN or AF-REG-NNN; globally unique
+  title: string               # human-readable, one line
+  category: integer           # 1..6, matches THREAT_MODEL.md Category number
+  subcategory: string         # e.g. "1b", "2f"; matches THREAT_MODEL.md ID
+  specialist: enum            # injector | conversationalist | smuggler | impersonator | saboteur | cracker | glutton
+  target_field: string        # short description of where the attack lands (USER_QUESTION, chart_text.<table>.<col>, HTTP envelope, etc.)
+
+  input:
+    type: enum                # single_turn | multi_turn | indirect_via_fixture | protocol_sequence
+    user_question: string?    # for single_turn
+    turns: list?              # for multi_turn — list of {role, content}
+    fixture_patient_id: string?  # for indirect_via_fixture
+    planted_field: object?    # for indirect_via_fixture — {table, column, payload}
+    sequence: list?           # for protocol_sequence — ordered list of HTTP-shaped steps
+
+  expected_safe_behavior: string  # plain-language description of what the Co-Pilot SHOULD do
+  observed_behavior: enum         # pending | pass | partial | fail
+  observed_evidence: string       # filled in by the eval run; quotes from the response, error codes, etc.
+
+  severity: enum             # info | low | medium | high | critical
+  exploitability: enum       # trivial | easy | moderate | hard
+  add_to_regression: boolean # promote to regression_cases.yaml on success
+
+  mutation_axes: object      # hints for the Red Team specialist when generating variants
+    # keys are arbitrary axis names (lexical, structural, framing, target_domain, etc.)
+    # values are lists of suggested mutation values
+
+  references:
+    threat_model: string     # link or section reference
+    architecture: string     # link or section reference
+
+  # Optional fields populated by the Vault when a case is pinned for regression:
+  pinned_at: string?         # ISO timestamp
+  pinned_judge_verdict: object?  # snapshot of the Judge verdict at pin time
+  target_version: string?    # commit SHA or release tag of the target at pin time
+  target_model: string?      # LLM model + version the Co-Pilot was using
+  retired_at: string?        # ISO timestamp (regression retirement)
+  retired_by: string?        # human reviewer name
+  retirement_reason: string?
+
+# ─────────────────────────────────────────────────────────────────────────────
+# judge_calibration.yaml record shape
+# ─────────────────────────────────────────────────────────────────────────────
+calibration_record:
+  id: string                 # AF-CAL-NNN
+  attack_id: string          # matches a seed_cases.yaml case ID
+  description: string        # what this fixture demonstrates
+  response_fixture: string   # frozen response body as if from the target — fed to the Judge
+  expected_judge_verdict:
+    verifier_replay: enum    # pass | fail
+    semantic: enum           # pass | partial | fail
+    severity: enum           # info | low | medium | high | critical
+
+# ─────────────────────────────────────────────────────────────────────────────
+# results/YYYY-MM-DD-HH-MM-SS.yaml record shape
+# ─────────────────────────────────────────────────────────────────────────────
+run_result:
+  run_id: string             # UUID
+  started_at: string         # ISO timestamp
+  finished_at: string        # ISO timestamp
+  target_url: string         # URL hit
+  target_version: string     # commit SHA or release tag at run time
+  target_model: string       # Co-Pilot LLM model in use
+  cases:
+    - case_id: string
+      attempt:
+        prompt: string?
+        chart_text_payload: string?
+        multi_turn_sequence: list?
+        envelope_overrides: object?
+      target_response:
+        status: integer
+        latency_ms: integer
+        raw_body: string
+        post_verifier_body: string?
+        prompt_tokens: integer?
+        completion_tokens: integer?
+        audit_log_id: string?
+      verdict:
+        verifier_replay: enum
+        semantic: enum
+        severity: enum
+        exploitability: enum
+        rationale: string
+        recommended_action: enum  # regression | mutate | escalate | discard
+      cost_usd: number?

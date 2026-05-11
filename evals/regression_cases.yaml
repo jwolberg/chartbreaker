@@ -1,0 +1,25 @@
+# evals/regression_cases.yaml
+#
+# Pinned exploits. Frozen test cases that run on every deploy via the
+# Regression Harness (the Vault — see ../ARCHITECTURE.md § 5).
+#
+# This file is WRITTEN BY THE PLATFORM, NOT BY HAND. The Vault appends a
+# case here when:
+#   1. The Judge issues a `semantic: fail` (= successful exploit) verdict.
+#   2. The corresponding seed case has `add_to_regression: true`.
+#   3. A human operator has not already retired the case.
+#
+# To retire a case, a human MUST commit `retired_at`, `retired_by`, and
+# `retirement_reason` fields on the case. The Orchestrator cannot retire
+# a case autonomously.
+#
+# Schema: see schema.yaml.
+
+version: "0.1"
+
+metadata:
+  created_at: "2026-05-11"
+  last_pinned_at: null
+  case_count: 0
+
+cases: []   # empty until the first confirmed exploit lands
