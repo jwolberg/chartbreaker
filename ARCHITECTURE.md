@@ -1,7 +1,7 @@
 # ARCHITECTURE.md — AgentForge Multi-Agent Adversarial Evaluation Platform
 
 > **Companion docs:** [`THREAT_MODEL.md`](./THREAT_MODEL.md) (what we attack), [`USERS.md`](./USERS.md) (who we serve), [`COST_ANALYSIS.md`](./COST_ANALYSIS.md) (what it costs).
-> **Target system:** OpenEMR Clinical Co-Pilot module (`interface/modules/custom_modules/oe-module-clinical-copilot/`) + Next.js Patient Dashboard (`apps/dashboard/`), deployed on GCE behind Caddy.
+> **Target system:** OpenEMR Clinical Co-Pilot module (`interface/modules/custom_modules/oe-module-clinical-copilot/`), deployed on GCE behind Caddy. The Next.js Patient Dashboard is reviewed separately and is **not** an AgentForge target.
 > **Platform code:** AgentForge Python package — lives in its own repository, separate from OpenEMR/PHP.
 
 ---
@@ -15,8 +15,6 @@ The adversarial platform exercises a single live deployment. Targets are not con
 | **Co-Pilot base URL** | `https://openemr.136-118-242-198.sslip.io` |
 | **Login endpoint** | `https://openemr.136-118-242-198.sslip.io/interface/login/login.php?site=default` |
 | **Co-Pilot API endpoint** | `https://openemr.136-118-242-198.sslip.io/interface/modules/custom_modules/oe-module-clinical-copilot/public/index.php?site=default` |
-| **Dashboard URL (separate)** | `https://next-dash.136-118-242-198.sslip.io` |
-| **Dashboard launch endpoint** | `https://next-dash.136-118-242-198.sslip.io/auth/launch?token=<HS256 JWT>` |
 | **Site identifier** | `default` |
 | **Auth model** | Dedicated AgentForge test user (NOT admin), provisioned with `patients:demo` ACL and access to a fixed set of fixture patients. Credentials live in `config.py` via env vars `AGENTFORGE_TARGET_USER` + `AGENTFORGE_TARGET_PASSWORD`. |
 | **Session establishment** | `POST /interface/login/login.php?site=default` with form-encoded `authUser` + `clearPass` + `authProvider`; captures session cookie + initial CSRF token from the response |
@@ -34,9 +32,9 @@ The adversarial platform exercises a single live deployment. Targets are not con
 
 AgentForge is a multi-agent adversarial evaluation platform that continuously probes the OpenEMR Clinical Co-Pilot for vulnerabilities, validates whether confirmed exploits are reproducible, and converts them into a regression suite that runs on every deploy. It is built as a multi-agent system because the work decomposes naturally along trust boundaries: an agent that *generates* attacks has a conflict of interest with one that *evaluates* them, an agent that *prioritizes* coverage has different inputs than one that *documents* findings, and the *kinds* of attacks differ enough (prompt-craft vs protocol fuzzing vs cost amplification) that one attack generator cannot do all of them well. Collapsing those roles into a single agent — or a deterministic pipeline — produces a tester that flatters its own attacks and cannot adapt as the target changes. AgentForge instead separates them into four primary agents (`Orchestrator`, `RedTeamLead`, `Judge`, `Scribe`) plus a team of attack specialists routed by the RedTeamLead, each backed by a different LLM team or, where appropriate, by deterministic Python tooling. The seven-plus components communicate via a shared LangGraph state store and a SQLite-backed observability layer.
 
-The control loop is driven by the **Orchestrator** (`orchestrator_agent.py`, Claude Haiku 4.5 for narrative + deterministic Python for priority math). On each tick, it reads the observability store — coverage per subcategory, recent verdicts, open Scribe reports, accumulated session cost — and emits a campaign brief: which threat-model subcategory to attack next, which seed case to start from, and how aggressively to mutate. The brief is passed to the **RedTeamLead** (`red_team_lead.py`), a router that dispatches to exactly one specialist based on the subcategory: LLM specialists (Injector, Conversationalist, Smuggler, Impersonator) handle prompt-craft work using a local open-weights model (Llama-3.1-8B or `dolphin-mixtral` via Ollama) because frontier APIs refuse offensive workflows inconsistently and destroy reproducibility; deterministic specialists (Saboteur for tool-misuse and parameter tampering, Cracker for authorization bypass / JWT / privilege escalation / trust-boundary violations, Glutton for DoS and cost amplification) handle protocol- and fuzzing-shaped work where the case study explicitly notes traditional security tooling outperforms LLMs. The chosen specialist produces an `AttackAttempt`, which the RedTeamLead forwards to the **Target Client** (`target_client.py`), a thin HTTP wrapper around the deployed Co-Pilot's `briefing` and `followup` endpoints. The Target Client enforces session/CSRF discipline, captures the full response envelope (raw model output, post-verifier output, timing, token usage, audit log ID), and writes a trace row to the observability store.
+The control loop is driven by the **Orchestrator** (`orchestrator_agent.py`, OpenAI `gpt-5.4-nano` by default for narrative + deterministic Python for priority math; every LLM-driven role reads its `{provider, model}` from a central registry — see § Model Configuration — so swapping any role is a one-row config edit). On each tick, it reads the observability store — coverage per subcategory, recent verdicts, open Scribe reports, accumulated session cost — and emits a campaign brief: which threat-model subcategory to attack next, which seed case to start from, and how aggressively to mutate. The brief is passed to the **RedTeamLead** (`red_team_lead.py`), a router that dispatches to exactly one specialist based on the subcategory: LLM specialists (Injector, Conversationalist, Smuggler, Impersonator) handle prompt-craft work using uncensored open-weights fine-tunes dispatched via OpenRouter (default `cognitivecomputations/dolphin-mixtral-8x22b`; `nousresearch/hermes-3-llama-3.1-70b` is a configured alternative) because commercially-aligned frontier APIs refuse offensive workflows inconsistently and destroy reproducibility. OpenRouter is a request router, not a model provider — the underlying weights are open, and the specialists can be repointed to a local Ollama deployment via the model registry without code changes when self-hosted inference is preferred. Deterministic specialists (Saboteur for tool-misuse and parameter tampering, Cracker for authorization bypass / CSRF / session-fixation / login brute-force / privilege escalation / trust-boundary violations, Glutton for DoS and cost amplification) handle protocol- and fuzzing-shaped work where the case study explicitly notes traditional security tooling outperforms LLMs. The chosen specialist produces an `AttackAttempt`, which the RedTeamLead forwards to the **Target Client** (`target_client.py`), a thin HTTP wrapper around the deployed Co-Pilot's `briefing` and `followup` endpoints. The Target Client enforces session/CSRF discipline, captures the full response envelope (raw model output, post-verifier output, timing, token usage, audit log ID), and writes a trace row to the observability store.
 
-The response is then routed to the **Judge** (`judge_agent.py`, Claude Sonnet 4.6 + deterministic verifier replay). The Judge issues a verdict in two parts: (a) a *verifier-replay verdict* — does the raw model output survive `SourceAttributionVerifier` and `DomainConstraintVerifier` re-run in our own code, and is what remains still safe? — and (b) a *semantic verdict* — did the model actually violate the DATA-ONLY rule, regardless of post-scrub output? Disagreement between the two is itself a finding worth surfacing. Verdicts fan out to two consumers. The **Regression Harness** (`regression.py`) freezes every `success` verdict into a pinned test case (prompt + context fixture + model version + verdict snapshot) in `evals/regression_cases.yaml`, and runs the full suite whenever the Orchestrator triggers a regression sweep. The **Scribe** (`documentation_agent.py`, Claude Sonnet 4.6) takes the same verdict and drafts a vulnerability report in `reports/AF-NNN-*.md`, but does *not* auto-file or auto-submit it — critical/high severity drafts require human review before they leave the repo. That human gate is the deliberate trust boundary in an otherwise autonomous loop.
+The response is then routed to the **Judge** (`judge_agent.py`, OpenAI `gpt-5.4-nano` by default + deterministic verifier replay; the Judge model is the most likely role to be escalated to a stronger OpenAI model when calibration drift warrants it, swappable via the model registry). The Judge issues a verdict in two parts: (a) a *verifier-replay verdict* — does the raw model output survive `SourceAttributionVerifier` and `DomainConstraintVerifier` re-run in our own code, and is what remains still safe? — and (b) a *semantic verdict* — did the model actually violate the DATA-ONLY rule, regardless of post-scrub output? Disagreement between the two is itself a finding worth surfacing. Verdicts fan out to two consumers. The **Regression Harness** (`regression.py`) freezes every `success` verdict into a pinned test case (prompt + context fixture + model version + verdict snapshot) in `evals/regression_cases.yaml`, and runs the full suite whenever the Orchestrator triggers a regression sweep. The **Scribe** (`documentation_agent.py`, OpenAI `gpt-5.4-nano` by default — swappable for a stronger OpenAI model when Final-quality prose is required) takes the same verdict and drafts a vulnerability report in `reports/AF-NNN-*.md`, but does *not* auto-file or auto-submit it — critical/high severity drafts require human review before they leave the repo. That human gate is the deliberate trust boundary in an otherwise autonomous loop.
 
 Everything observable — every prompt, every verdict, every cost dollar, every agent handoff — is written to `observability/runs.sqlite` and a streaming `traces.jsonl`. This is not afterthought logging; it is the substrate the Orchestrator reads on its next tick. Without it, the Orchestrator is blind and the platform devolves into random fuzzing. Cost is tracked per-agent, per-run, and per-campaign so that the Orchestrator can halt or de-prioritize when budget burns without signal. The platform's hard architectural commitment is that *every* autonomous decision is replayable from the trace store — a CISO must be able to ask "why did the platform attack this surface yesterday?" and get a deterministic answer.
 
@@ -48,7 +46,7 @@ Everything observable — every prompt, every verdict, every cost dollar, every 
                        ┌─────────────────────┐
                        │  Orchestrator Agent  │
                        │  (Conductor)         │
-                       │  Haiku 4.5 + Python  │
+                       │  OpenAI nano + Py    │
                        │  coverage + cost +   │
                        │  priority decisions  │
                        └──────────┬──────────┘
@@ -58,23 +56,23 @@ Everything observable — every prompt, every verdict, every cost dollar, every 
         │                    Red Team Team                          │
         │  ┌────────────────────────────────────────────────────┐   │
         │  │  RedTeamLead  (router only — no attack generation) │   │
-        │  │  Haiku 4.5 narration + deterministic Python routing│   │
+        │  │  OpenAI nano narration + deterministic Python route│   │
         │  └────────────────────────┬──────────────────────────┘   │
         │                           │ dispatches to ONE specialist  │
         │                           ▼                               │
         │  ┌───────────────────────────┬──────────────────────────┐ │
         │  │  LLM specialists          │  Deterministic           │ │
-        │  │  (local model via Ollama) │  specialists (Python)    │ │
+        │  │  (OpenRouter: dolphin)    │  specialists (Python)    │ │
         │  │                           │                          │ │
         │  │  • Injector               │  • Saboteur              │ │
         │  │      Cat 1a/1b/1c/1e/1f   │      Cat 4a/4b/4c/4d     │ │
         │  │      + Cat 3e (poisoning) │      (tool misuse,       │ │
         │  │  • Conversationalist      │       param tampering)   │ │
         │  │      Cat 1d, 3a           │  • Cracker               │ │
-        │  │  • Smuggler               │      Cat 2f, 6a, 6c, 6d  │ │
-        │  │      Cat 2a, 2b, 2d       │      (authz, JWT,        │ │
-        │  │  • Impersonator (opt.)    │       priv escalation,   │ │
-        │  │      Cat 6b               │       trust boundary)    │ │
+        │  │  • Smuggler               │      Cat 2f, 6a, 6c,     │ │
+        │  │      Cat 2a, 2b, 2d       │      6d, 6e (authz, CSRF,│ │
+        │  │  • Impersonator (opt.)    │       session, brute-    │ │
+        │  │      Cat 6b               │       force, priv esc)   │ │
         │  │                           │  • Glutton               │ │
         │  │                           │      Cat 5a–5e (DoS,     │ │
         │  │                           │       cost amplif'n)     │ │
@@ -94,7 +92,7 @@ Everything observable — every prompt, every verdict, every cost dollar, every 
                        ┌─────────────────────┐
                        │    Judge Agent       │
                        │    (Arbiter)         │
-                       │    Sonnet 4.6 +      │
+                       │    gpt-5.4-nano +    │
                        │    verifier replay   │
                        │    pass/fail/partial │
                        │    + severity        │
@@ -105,7 +103,7 @@ Everything observable — every prompt, every verdict, every cost dollar, every 
         ┌─────────────────────┐   ┌────────────────────────┐
         │ Regression Harness  │   │ Documentation Agent     │
         │ (Vault)             │   │ (Scribe)                │
-        │ deterministic Python│   │ Sonnet 4.6              │
+        │ deterministic Python│   │ gpt-5.4-nano            │
         │ pins exploits as    │   │ drafts AF-NNN-*.md      │
         │ regression cases    │   │ → human approval gate   │
         └──────────┬──────────┘   └───────────┬────────────┘
@@ -138,7 +136,7 @@ Each agent has a class name, a code-level handle, a model team, and explicit inp
 ### 1. Conductor — Orchestrator Agent
 - **Class:** `OrchestratorAgent` in `agentforge/agents/orchestrator_agent.py`
 - **Handle:** `orchestrator`
-- **Model team:** Claude Haiku 4.5 (Anthropic) for narrative reasoning over coverage state + deterministic Python for the priority-score math. The math layer is the load-bearing one; the LLM layer is for human-readable campaign rationales in the observability log.
+- **Model team:** OpenAI `gpt-5.4-nano` by default for narrative reasoning over coverage state + deterministic Python for the priority-score math. The math layer is the load-bearing one; the LLM layer is for human-readable campaign rationales in the observability log. Model is configurable per role via the registry (see § Model Configuration); any OpenAI-compatible endpoint (OpenAI, OpenRouter, Ollama, Anthropic) is a drop-in.
 - **Inputs:**
   - `observability/runs.sqlite` — per-subcategory attempt count, success rate, last verdict, last regression timestamp
   - `evals/seed_cases.yaml` — canonical seed attacks per subcategory
@@ -160,7 +158,7 @@ A deliberate design choice: **LLM specialists handle prompt-craft work; determin
 #### 2.0 RedTeamLead — the router
 - **Class:** `RedTeamLead` in `agentforge/agents/red_team_lead.py`
 - **Handle:** `red_team_lead`
-- **Model team:** Deterministic Python routing table keyed on `subcategory_id` + Claude Haiku 4.5 for one-sentence narration in the trace ("dispatching Cat 1b to Injector with mutation_budget=5"). Routing is *not* LLM-decided — it's a lookup. The LLM only narrates, never decides.
+- **Model team:** Deterministic Python routing table keyed on `subcategory_id` + OpenAI `gpt-5.4-nano` (default) for one-sentence narration in the trace ("dispatching Cat 1b to Injector with mutation_budget=5"). Routing is *not* LLM-decided — it's a lookup. The LLM only narrates, never decides.
 - **Inputs:** `CampaignBrief` from Orchestrator
 - **Outputs:** `AttackAttempt` (after the chosen specialist returns)
 - **Trust level:** **Trusted with routing only.** Cannot generate attacks itself; cannot bypass the routing table.
@@ -169,7 +167,7 @@ A deliberate design choice: **LLM specialists handle prompt-craft work; determin
 #### 2.1 Injector (LLM specialist)
 - **Class:** `InjectionSpecialist` in `agentforge/agents/specialists/injection_specialist.py`
 - **Handle:** `injector`
-- **Model team:** Local open-weights model via Ollama. Default `llama3.1:8b`; upgrade path to `dolphin-mixtral:8x7b` or `wizardlm-2:8x22b` on rented GPU. **Frontier models are explicitly disallowed** — they refuse offensive prompts inconsistently, which contaminates reproducibility.
+- **Model team:** Uncensored open-weights fine-tune dispatched via OpenRouter. Default `cognitivecomputations/dolphin-mixtral-8x22b`; alternative `nousresearch/hermes-3-llama-3.1-70b`. Local Ollama deployment (`dolphin-mixtral:8x7b`, `llama3.1:8b`) is an in-registry fallback for air-gapped runs or environments where hosted access is constrained. **Commercially-aligned frontier models (OpenAI `gpt-*` general-purpose, Anthropic Claude, Google Gemini, Grok, base Qwen) are explicitly disallowed for this role** — they refuse offensive prompts inconsistently, which contaminates reproducibility. Uncensored fine-tunes are *trained* to remove the refusal layer; that is what makes them the right pick here, not their provenance.
 - **Covers:** Categories **1a, 1b, 1c, 1e, 1f** (direct injection, indirect via chart text, vision-extracted injection, structured-output coercion, system-prompt extraction) and **3e** (context poisoning via injected chart-text premises).
 - **Inputs:** `CampaignBrief` + the seed body from `evals/seed_cases.yaml`
 - **Outputs:** `AttackAttempt` with `prompt` and/or `chart_text_payload` set
@@ -179,7 +177,7 @@ A deliberate design choice: **LLM specialists handle prompt-craft work; determin
 #### 2.2 Conversationalist (LLM specialist)
 - **Class:** `MultiTurnSpecialist` in `agentforge/agents/specialists/multi_turn_specialist.py`
 - **Handle:** `conversationalist`
-- **Model team:** Same Ollama-hosted local model as Injector, but with a different system prompt focused on planning a multi-turn arc (establish premise, build credibility, exploit late). Maintains its own *attacker-side* state across turns of a single attempt.
+- **Model team:** Same offensive model as Injector (default `cognitivecomputations/dolphin-mixtral-8x22b` via OpenRouter), but with a different system prompt focused on planning a multi-turn arc (establish premise, build credibility, exploit late). Maintains its own *attacker-side* state across turns of a single attempt.
 - **Covers:** Categories **1d** (multi-turn manipulation) and **3a** (conversation-history poisoning).
 - **Inputs:** `CampaignBrief` + optional `parent_case_id` (for mutating a near-miss multi-turn arc)
 - **Outputs:** `AttackAttempt` with `multi_turn_sequence` populated as an ordered list of user turns
@@ -189,7 +187,7 @@ A deliberate design choice: **LLM specialists handle prompt-craft work; determin
 #### 2.3 Smuggler (LLM specialist)
 - **Class:** `ExfiltrationSpecialist` in `agentforge/agents/specialists/exfiltration_specialist.py`
 - **Handle:** `smuggler`
-- **Model team:** Same Ollama model. System prompt focused on output-shape work: knows the `SourceAttributionVerifier` and `DomainConstraintVerifier` rules and crafts inputs that produce outputs that *pass through* them while still leaking. Distinct skill from Injector — Smuggler's goal is verifier survival, not system-prompt override.
+- **Model team:** Same offensive model as Injector (OpenRouter default). System prompt focused on output-shape work: knows the `SourceAttributionVerifier` and `DomainConstraintVerifier` rules and crafts inputs that produce outputs that *pass through* them while still leaking. Distinct skill from Injector — Smuggler's goal is verifier survival, not system-prompt override.
 - **Covers:** Categories **2a** (PHI in summary fields), **2b** (source-ID forgery), **2d** (vision-extracted PHI escape).
 - **Inputs:** `CampaignBrief` + seed
 - **Outputs:** `AttackAttempt`
@@ -214,17 +212,18 @@ A deliberate design choice: **LLM specialists handle prompt-craft work; determin
 #### 2.5 Cracker (deterministic specialist)
 - **Module:** `agentforge/agents/specialists/protocol_specialist.py`
 - **Handle:** `cracker`
-- **Model team:** **None — pure Python**, using libraries like `httpx`, `pyjwt`, `secrets`.
-- **Covers:** Categories **2f** (authz bypass via `pid`), **6a** (JWT replay/forgery, trust boundary violation), **6c** (privilege escalation: ACL bypass + BAA gate flip), **6d** (FHIR token leakage, trust boundary violation).
+- **Model team:** **None — pure Python**, using libraries like `httpx`, `secrets`, `requests-toolbelt`.
+- **Covers:** Categories **2f** (authz bypass via `pid`), **6a** (CSRF token replay / forgery against `CopilotController.php:259`), **6c** (privilege escalation: ACL bypass + BAA gate flip), **6d** (session fixation / cookie theft against the OpenEMR login flow), **6e** (login brute-force / lockout bypass).
 - **Strategy:**
-  - `pid` swap across authenticated sessions; deleted-pid replay; pid type confusion
-  - JWT decode + tamper at `/auth/launch?token=…`; signature replay with expired tokens; missing-`exp` exploitation per `route.ts:30`
-  - BAA-gate probe: assert behavior before/after toggle
-  - FHIR-token URL-leakage probe (browser history / referer / log capture surface)
+  - `pid` swap across authenticated sessions; deleted-pid replay; pid type confusion (Cat 2f)
+  - CSRF token replay across the same session window; header-only vs body-only paths; missing-header bypass; token-rotation race during refresh (Cat 6a)
+  - Session-fixation probe: pre-seed `PHPSESSID` before login, verify whether OpenEMR rotates the session ID on authentication; cookie-flag audit (`Secure`, `HttpOnly`, `SameSite`) (Cat 6d)
+  - Login surface probes against `POST /interface/login/login.php?site=default`: rate-limit gaps, lockout-reset behavior, error-message timing oracle. Acts as an enabler for 6c/6d/2f — not a standalone exploit (Cat 6e)
+  - BAA-gate probe: assert behavior before/after `copilot_baa_acknowledged` toggle (Cat 6c)
 - **Inputs:** `CampaignBrief` + session credentials from `target_client`
 - **Outputs:** `AttackAttempt` (often a sequence of HTTP requests rather than a single prompt)
 - **Trust level:** **Trusted Python.** Has direct HTTP control of the Target Client — the most privileged specialist. Hardcoded to the `config.py` target URL only.
-- **Failure modes:** Token forgery succeeds in ways the Judge can't yet evaluate → escalate to human review automatically.
+- **Failure modes:** A CSRF or session bypass succeeds in ways the Judge can't yet evaluate → escalate to human review automatically. Login brute-force is rate-capped at the Cracker layer (independent of any server-side throttle) so the platform does not accidentally lock the AgentForge test user out.
 
 #### 2.6 Glutton (deterministic specialist)
 - **Module:** `agentforge/agents/specialists/cost_amplifier.py`
@@ -245,7 +244,7 @@ A deliberate design choice: **LLM specialists handle prompt-craft work; determin
 #### 2.7 Impersonator (LLM specialist — optional, foldable)
 - **Class:** `PersonaSpecialist` in `agentforge/agents/specialists/persona_specialist.py`
 - **Handle:** `impersonator`
-- **Model team:** Same Ollama model as Injector.
+- **Model team:** Same offensive model as Injector (OpenRouter default).
 - **Covers:** Category **6b** (persona hijacking).
 - **Decision:** Whether to ship this separately or fold its prompt into Injector is an MVP tactical call (see table below). For Final, separate specialist gives cleaner coverage attribution; for MVP, folding is acceptable.
 
@@ -258,7 +257,7 @@ A deliberate design choice: **LLM specialists handle prompt-craft work; determin
   - `POST /interface/login/login.php?site=default` — session establishment
   - `POST /interface/modules/custom_modules/oe-module-clinical-copilot/public/index.php?site=default` — Co-Pilot `briefing` and `followup` actions
   - `POST /interface/modules/custom_modules/oe-module-clinical-copilot/public/run-extraction.php` — vision extraction (Saboteur Cat 4a probes)
-  - `GET /auth/launch?token=<HS256 JWT>` on the dashboard host — JWT replay / tamper attacks (Cracker Cat 6a)
+  - `POST /interface/login/login.php?site=default` — additional login probes for Cracker Cat 6d (session fixation) and 6e (brute-force / lockout), beyond the routine session-establishment use already listed above
 - **Responsibilities:**
   - Authenticate as the dedicated AgentForge test user (env-configured credentials); capture session cookie + CSRF token
   - Refresh the session when the cookie expires; the refresh is itself a logged trace event (relevant to Cat 5b rate-limit-bypass cases)
@@ -274,7 +273,7 @@ A deliberate design choice: **LLM specialists handle prompt-craft work; determin
 ### 4. Arbiter — Judge Agent
 - **Class:** `JudgeAgent` in `agentforge/agents/judge_agent.py`
 - **Handle:** `judge`
-- **Model team:** Claude Sonnet 4.6 for semantic verdicts + deterministic Python (regex/schema) replay of `SourceAttributionVerifier` and `DomainConstraintVerifier` lifted from the Co-Pilot module.
+- **Model team:** OpenAI `gpt-5.4-nano` by default for semantic verdicts + deterministic Python (regex/schema) replay of `SourceAttributionVerifier` and `DomainConstraintVerifier` lifted from the Co-Pilot module. **Caveat — known calibration risk:** the Co-Pilot target itself runs `gpt-5.4-mini` (per `THREAT_MODEL.md`); running a weaker-class Judge against a stronger-class target is a known accuracy risk on semantic verdicts. The nano default is a cost choice; operators are expected to escalate the Judge model in the registry to a stronger OpenAI model whenever the calibration set in `evals/judge_calibration.yaml` shows degraded accuracy. The verifier-replay half of the verdict is unaffected by this choice — it is pure Python.
 - **Inputs:** `AttackAttempt` + `TargetResponse`
 - **Outputs:** `Verdict` → `{verifier_replay: pass|fail, semantic: pass|partial|fail, severity: info|low|medium|high|critical, exploitability: trivial|easy|moderate|hard, rationale, recommended_action: regression|mutate|escalate|discard}`
 - **Trust level:** **Independent and isolated from RedTeam.** The Judge never sees the RedTeam's reasoning or self-assessment — only the rendered attack and the target's response. This is the load-bearing trust boundary in the system: an attack-and-judge in the same context is compromised by design.
@@ -298,7 +297,7 @@ A deliberate design choice: **LLM specialists handle prompt-craft work; determin
 ### 6. Scribe — Documentation Agent
 - **Class:** `DocumentationAgent` in `agentforge/agents/documentation_agent.py`
 - **Handle:** `scribe`
-- **Model team:** Claude Sonnet 4.6
+- **Model team:** OpenAI `gpt-5.4-nano` by default. Operators typically escalate Scribe to a stronger OpenAI model (set in the registry) for Final-deliverable vulnerability reports where prose quality matters.
 - **Inputs:** `Verdict{semantic: fail, severity: medium+}` + `AttackAttempt` + `TargetResponse` + the relevant `THREAT_MODEL.md` subcategory entry
 - **Outputs:** A `reports/AF-NNN-<slug>.md` file with the required vulnerability-report sections (ID, severity, description, clinical impact, minimal reproducer, observed vs expected, remediation, status). The Scribe **drafts**, it does not **publish**.
 - **Trust level:** **Drafts only.** No autonomous publishing, ticket creation, or remediation suggestion outside the report file. Critical-severity drafts are flagged for human review and held in a `reports/draft/` subdirectory until a reviewer moves them.
@@ -325,19 +324,20 @@ The expanded layout, with annotations on additions beyond your sketch.
   target_client.py                   # HTTP wrapper for Co-Pilot endpoints
   graph.py                           # ADDED — LangGraph state graph wiring all agents
   state.py                           # ADDED — typed state objects (CampaignBrief, AttackAttempt, TargetResponse, Verdict)
+  llm_client.py                      # ADDED — OpenAI-compatible chat dispatcher; reads MODEL_REGISTRY, routes per-role
   regression.py                      # ADDED — deterministic regression runner (the Vault)
   redactor.py                        # ADDED — PHI redaction layer for Scribe output
 
   /agents
     __init__.py
-    orchestrator_agent.py            # Conductor (Haiku + Python)
+    orchestrator_agent.py            # Conductor (OpenAI gpt-5.4-nano + Python by default)
     red_team_lead.py                 # CHANGED — routes briefs to specialists (was red_team_agent.py)
-    judge_agent.py                   # Arbiter (Sonnet + verifier replay)
-    documentation_agent.py           # Scribe (Sonnet)
+    judge_agent.py                   # Arbiter (OpenAI gpt-5.4-nano + verifier replay by default)
+    documentation_agent.py           # Scribe (OpenAI gpt-5.4-nano by default)
 
     /specialists                     # ADDED — Red Team team
       __init__.py
-      injection_specialist.py        # Injector (LLM, local via Ollama)
+      injection_specialist.py        # Injector (LLM, OpenRouter dolphin-mixtral by default)
       multi_turn_specialist.py       # Conversationalist (LLM)
       exfiltration_specialist.py     # Smuggler (LLM)
       persona_specialist.py          # Impersonator (LLM, optional/foldable)
@@ -389,6 +389,7 @@ The expanded layout, with annotations on additions beyond your sketch.
 |------|-----------------|
 | `graph.py` | Without an explicit LangGraph definition, agent handoff lives implicitly in `cli.py` and becomes untestable. |
 | `state.py` | Typed Pydantic models for `CampaignBrief`, `AttackAttempt`, `TargetResponse`, `Verdict`. Inter-agent contracts in code, not docstrings. |
+| `llm_client.py` | The model registry's only consumer. Reads `{role → provider, model}`, dispatches against OpenAI / OpenRouter / Ollama / Anthropic over the OpenAI-compatible chat-completion API. Lets us swap any role's model in one config-file edit. |
 | `regression.py` | The Regression Harness is a hard requirement and is not an agent — it deserves its own module. |
 | `redactor.py` | The Scribe sees live target responses, which may contain PHI from fixture patients. The post-write redactor is the safety net. |
 | `/verifiers/` | The Judge's deterministic half is a Python port of the Co-Pilot's PHP verifiers. Isolating them in their own package keeps the parity testable. |
@@ -502,26 +503,67 @@ The platform is autonomous up to four hard gates:
 
 | Capability | Decision | Justification |
 |------------|----------|---------------|
-| Attack generation — prompt-craft (injection, multi-turn, exfiltration, persona) | **AI (local model)** | Novelty and mutation diversity are exactly what LLMs do well; deterministic fuzzers cover a narrower space. → Injector, Conversationalist, Smuggler, Impersonator |
-| Attack generation — protocol / fuzzing / cost (authz bypass, JWT forgery, param tampering, DoS) | **Deterministic Python** | Case study guidance: "traditional non-AI security tooling may outperform LLMs in deterministic validation, replay testing, fuzzing, and protocol-level analysis." → Saboteur, Cracker, Glutton |
+| Attack generation — prompt-craft (injection, multi-turn, exfiltration, persona) | **AI (OpenRouter uncensored fine-tune)** | Novelty and mutation diversity are exactly what LLMs do well; deterministic fuzzers cover a narrower space. Uncensored fine-tunes avoid the refusal layer that contaminates frontier-API output. → Injector, Conversationalist, Smuggler, Impersonator |
+| Attack generation — protocol / fuzzing / cost (authz bypass, CSRF / session / brute-force, param tampering, DoS) | **Deterministic Python** | Case study guidance: "traditional non-AI security tooling may outperform LLMs in deterministic validation, replay testing, fuzzing, and protocol-level analysis." → Saboteur, Cracker, Glutton |
 | Red Team routing | **Deterministic table + LLM narration** | Routing is a `subcategory_id` lookup, not a judgment call. LLM only narrates the choice in the trace. |
 | Verifier replay | **Deterministic Python** | Must match Co-Pilot's PHP behavior byte-for-byte. Any LLM substitution introduces drift. |
-| Semantic verdict | **AI (frontier)** | Reading whether a response *implies* a clinical recommendation while passing regex checks requires semantic judgment. |
+| Semantic verdict | **AI (OpenAI, default `gpt-5.4-nano`)** | Reading whether a response *implies* a clinical recommendation while passing regex checks requires semantic judgment. Default is set for cost; registry escalates the Judge model when the calibration set shows degraded accuracy. |
 | Severity scoring | **AI with deterministic clamp** | LLM proposes a level; a deterministic rubric in `judge_agent.py` clamps based on PHI presence / verifier verdict. |
 | Coverage math | **Deterministic Python** | Simple aggregation; an LLM here is pure overhead. |
-| Campaign rationale narration | **AI (cheap model)** | Operator-readable explanations; nice-to-have, low-stakes. |
+| Campaign rationale narration | **AI (OpenAI `gpt-5.4-nano`)** | Operator-readable explanations; nice-to-have, low-stakes. |
 | Regression replay | **Deterministic Python** | A non-deterministic regression test is a contradiction. |
-| Report drafting | **AI (frontier)** | Coherent prose under a tight schema is the natural LLM sweet spot. Human reviews before publish. |
+| Report drafting | **AI (OpenAI, default `gpt-5.4-nano`; escalate per registry)** | Coherent prose under a tight schema is the natural LLM sweet spot. Operators escalate from nano for Final-quality drafts. Human reviews before publish. |
 | Report publishing | **Human only** | Trust boundary. |
 
 ---
 
 ## Framework, State, and Coordination
 
-- **Language:** Python 3.12, Pydantic v2 for state objects, `httpx` for the Target Client (async ready for concurrent campaigns), `ollama` (or `litellm`) for local-model dispatch, `anthropic` for frontier calls.
+- **Language:** Python 3.12, Pydantic v2 for state objects, `httpx` for the Target Client (async ready for concurrent campaigns) and for all LLM dispatch. A thin `llm_client.py` speaks the OpenAI-compatible chat-completion surface, which is the shared interface for **OpenAI, OpenRouter, Ollama, and Anthropic** — every LLM-driven role reads `{provider, model}` from `MODEL_REGISTRY` in `config.py` (see § Model Configuration).
 - **Coordination framework:** LangGraph 0.2+ for state graph, LangSmith for hosted traces (optional but recommended), SQLite (stdlib) for the canonical state store.
 - **State management:** Two layers. LangGraph in-memory state for an active run; SQLite + JSONL on disk as the durable log. Nothing important lives only in process memory.
 - **Concurrency model:** Single-threaded loop in MVP. Async-ready Target Client so a future Orchestrator can issue concurrent campaigns against the same target without code churn. Concurrency against the live target is rate-limit-gated by the Co-Pilot itself (30/min/session) — useful adversarial signal in its own right.
+
+---
+
+## Model Configuration — The Control Panel
+
+Every LLM-driven role reads its `{provider, model}` from a central `MODEL_REGISTRY` dict in `config.py`. Swapping the model for any role — escalating the Judge from `gpt-5.4-nano` to a stronger OpenAI model for a Final-quality regression sweep, repointing the Injector from OpenRouter to a local Ollama instance for an air-gapped run, or trying a different uncensored fine-tune for one specialist — is a one-row config edit, not a code change. The dispatch layer (`agentforge/llm_client.py`) is a thin async wrapper over the OpenAI-compatible `/v1/chat/completions` surface, which **OpenAI, OpenRouter, Ollama, and Anthropic** all speak (Anthropic also offers its native `/v1/messages`, which we support but do not require).
+
+**Default registry (MVP):**
+
+| Role | Provider | Model | Why |
+|------|----------|-------|-----|
+| `orchestrator` | OpenAI | `gpt-5.4-nano` | Narration only; cheap by design |
+| `red_team_lead` | OpenAI | `gpt-5.4-nano` | One-sentence dispatch trace |
+| `injector` | OpenRouter | `cognitivecomputations/dolphin-mixtral-8x22b` | Uncensored fine-tune for offensive prompt-craft |
+| `conversationalist` | OpenRouter | `cognitivecomputations/dolphin-mixtral-8x22b` | Same — multi-turn arc generation |
+| `smuggler` | OpenRouter | `cognitivecomputations/dolphin-mixtral-8x22b` | Same — verifier-bypass shape work |
+| `impersonator` | OpenRouter | `cognitivecomputations/dolphin-mixtral-8x22b` | Same — persona hijacking |
+| `judge_semantic` | OpenAI | `gpt-5.4-nano` | Cost default; escalate when calibration degrades |
+| `scribe` | OpenAI | `gpt-5.4-nano` | Cost default; escalate for Final-quality drafts |
+
+**Supported providers (drop-in via `{base_url, api_key_env}`):**
+
+| Provider | Base URL | Auth env var | Primary use |
+|----------|----------|--------------|-------------|
+| OpenAI | `https://api.openai.com/v1` | `OPENAI_API_KEY` | Judge, Scribe, Orchestrator, RedTeamLead defaults |
+| OpenRouter | `https://openrouter.ai/api/v1` | `OPENROUTER_API_KEY` | Offensive specialists (uncensored open-weights fine-tunes) |
+| Ollama | `http://localhost:11434/v1` | (none) | Offensive specialists when self-hosted; air-gapped runs; cost-zero override |
+| Anthropic | `https://api.anthropic.com/v1` | `ANTHROPIC_API_KEY` | Optional Judge/Scribe escalation if operator prefers Claude |
+
+**OpenRouter ↔ Ollama is not a proxy relationship — it's a swap.** OpenRouter is a hosted aggregator that routes to upstream model providers; Ollama is a local inference server. Both expose OpenAI-compatible chat-completion endpoints, which is why `llm_client.py` treats them as drop-in equivalents. Switching a role from OpenRouter to Ollama is changing one `provider` field; no code path changes. Where it matters, the registry can also pin OpenRouter's `provider.order` to lock the upstream route for reproducibility.
+
+**Why this design:**
+- **Reproducibility:** every trace row writes the exact `{role, provider, model}` that produced it, so a regression case can be replayed against the same model that originally judged it. When a model changes, the regression case is flagged for human triage rather than silently re-verdicted.
+- **Offensive/judge isolation:** offensive specialists never share an API key with the Judge or Scribe — they're on different providers by construction. This makes it cheaper to lock down or rotate offensive credentials independently.
+- **Drop-in escalation:** if `gpt-5.4-nano` produces too many disagreements on the Judge's calibration set, the fix is a one-line registry edit, not a code change.
+- **Cost discipline:** the Orchestrator's per-role cost telemetry already keys on `(role, provider, model)`; budget enforcement is unchanged when models swap.
+
+**Why OpenRouter for offensive specialists, OpenAI for Judge / Scribe / Orchestrator:**
+- OpenRouter's value here is *access to uncensored open-weights fine-tunes without operating GPU infrastructure*. We do not use OpenRouter to access frontier OpenAI / Anthropic / Google models — those route directly to their native APIs.
+- OpenAI `gpt-5.4-nano` is the cheapest reasonable judge that runs on the same provider stack as the target. The Co-Pilot itself runs `gpt-5.4-mini`; co-locating Judge inference with the same provider family minimizes vendor-side behavior surprises during regression sweeps. The known weakness — a weaker-class Judge against a stronger-class target — is acknowledged on the Judge entry above and is the explicit reason the registry supports per-role escalation.
+- Operators who prefer Claude for the Judge role flip one registry entry — no code change.
 
 ---
 
@@ -530,9 +572,9 @@ The platform is autonomous up to four hard gates:
 Detailed numbers live in [`COST_ANALYSIS.md`](./COST_ANALYSIS.md). Architectural implications:
 
 - **Local RedTeam model means RedTeam cost ≈ $0** at MVP scale (own hardware) or single-digit dollars on rented GPU. This is the single biggest cost-control decision in the design.
-- **Frontier Judge is the dominant cost.** Mitigations: deterministic verifier-replay runs first (free), Judge LLM only fires on cases where verifier-replay disagrees with the attack's expected outcome.
-- **Frontier Scribe runs only on confirmed exploits**, not on every attempt. Volume is bounded by `success`-rate, not by attempt-rate.
-- **Orchestrator Haiku narration** is cheap enough to ignore at any reasonable scale.
+- **Hosted Judge LLM is the dominant variable cost** (even at the `gpt-5.4-nano` default). Mitigations: deterministic verifier-replay runs first (free), Judge LLM only fires on cases where verifier-replay disagrees with the attack's expected outcome. If operators escalate the Judge to a stronger OpenAI model in the registry for accuracy, this row grows accordingly and is the first place to look when projecting 10K+ run budgets.
+- **Scribe runs only on confirmed exploits**, not on every attempt. Volume is bounded by `success`-rate, not by attempt-rate.
+- **Orchestrator narration on `gpt-5.4-nano`** is cheap enough to ignore at any reasonable scale.
 - **At 100K attempts:** the architecture continues to fit if (a) the Judge LLM is gated on verifier disagreement, (b) the Orchestrator runs as a scheduled job rather than continuously, (c) a small batch-evaluation mode is added to the Judge for replay-only regression sweeps.
 
 ---
@@ -541,8 +583,8 @@ Detailed numbers live in [`COST_ANALYSIS.md`](./COST_ANALYSIS.md). Architectural
 
 | Tradeoff | What we picked | What we gave up |
 |----------|---------------|----------------|
-| Local vs hosted RedTeam | Local Ollama | Setup complexity; smaller model means weaker attack novelty per dollar (offset by infinite retries) |
-| Frontier vs cheap Judge | Frontier (Sonnet 4.6) | Cost. Mitigated by verifier-replay gating. |
+| OpenRouter vs local Ollama for RedTeam | OpenRouter to uncensored open-weights fine-tunes (Ollama remains an in-registry fallback) | Hosted-provider availability and per-attempt cost vs free local inference (offset by zero local-GPU operational burden and the ability to flip back in one config line) |
+| Frontier vs cheap Judge | `gpt-5.4-nano` default; registry-escalatable per role | Semantic-judgment accuracy when the Judge is weaker than the target (`gpt-5.4-mini`). Mitigated by verifier-replay gating, the calibration set, and one-line registry escalation when calibration degrades. |
 | LangGraph vs hand-rolled | LangGraph | Vendor lock-in; learning curve. Justified by observability win. |
 | SQLite vs Postgres | SQLite | Multi-process concurrency limits. Fine for MVP, swap later. |
 | One target at a time | Hardcoded URL | Loss of multi-tenant testing. Deliberate safety choice. |
@@ -550,7 +592,7 @@ Detailed numbers live in [`COST_ANALYSIS.md`](./COST_ANALYSIS.md). Architectural
 
 **Open risks the platform must surface, not hide:**
 - The Judge can be wrong. The calibration set is small at MVP and grows over time.
-- The local RedTeam specialists are weaker than a frontier model at producing genuinely novel attacks. We accept this in exchange for reliability; we revisit if MVP coverage stalls.
+- Uncensored fine-tunes (dolphin-mixtral-8x22b, hermes-3-llama-3.1-70b) are weaker than aligned frontier models at producing genuinely novel attacks. We accept this in exchange for the reliability of an unfiltered generation surface; we revisit if MVP coverage stalls.
 - The Co-Pilot may change in ways that silently invalidate seed cases. Every seed case carries a target-version pin; mismatch fires a review.
 
 ---
@@ -562,19 +604,19 @@ The platform's component count is intentional; not every component ships by the 
 | Component | MVP (Tue) | Final (Fri) | Rationale |
 |-----------|-----------|-------------|-----------|
 | Orchestrator | ✅ priority math + minimal narration | ✅ full | Math is small; narration is cheap to add |
-| RedTeamLead | ✅ routing table | ✅ + Haiku narration | Routing is a lookup; narration is polish |
+| RedTeamLead | ✅ routing table | ✅ + nano narration | Routing is a lookup; narration is polish |
 | Injector | ✅ Cat 1a, 1b (highest demo value) | ✅ all Cat 1 + 3e | Indirect injection is the marquee finding |
 | Conversationalist | ⏸ defer | ✅ Cat 1d, 3a | Multi-turn is the second-most-impressive finding; needs Judge calibration |
 | Smuggler | ⏸ defer | ✅ Cat 2a, 2b, 2d | Verifier-bypass needs the verifier ports done first |
 | Saboteur | ✅ Cat 4c (param tampering) — small Python | ✅ full Cat 4 | Parameter fuzzing is cheap; tool-pipeline probes later |
-| Cracker | ✅ Cat 2f (pid swap) + Cat 6a (JWT replay) | ✅ full Cat 6 | These two are short scripts and demo-able |
+| Cracker | ✅ Cat 2f (pid swap) + Cat 6a (CSRF replay) | ✅ full Cat 6 (+ 6d session-fixation, 6e brute-force) | These two are short scripts and demo-able |
 | Glutton | ⏸ defer | ✅ full Cat 5 | Cost telemetry needs Orchestrator budget enforcement first |
 | Impersonator | ⏸ folded into Injector prompt | ⚖️ optional separate specialist | Cleanest coverage attribution if separated; not required |
-| Target Client | ✅ briefing + followup endpoints | ✅ + vision + dashboard launch | Vision-extraction path comes with Saboteur |
+| Target Client | ✅ briefing + followup endpoints | ✅ + vision + login probes | Vision-extraction path comes with Saboteur; login probes come with Cracker Cat 6d/6e |
 | Judge — verifier replay | ✅ both verifiers ported | ✅ | Required for any verdict at all |
 | Judge — semantic LLM | ⏸ partial (binary fail/pass only) | ✅ full (success/partial/fail + severity) | Calibration set needs time |
 | Regression Harness | ✅ pin + replay | ✅ + cross-category regression flagging | The "fix moved the symptom" check |
-| Scribe | ⏸ template-only drafts | ✅ Sonnet-drafted with PHI redaction | Three vuln reports by Final is the bar |
+| Scribe | ⏸ template-only drafts | ✅ LLM-drafted with PHI redaction (default `gpt-5.4-nano`; escalate via registry for Final reports) | Three vuln reports by Final is the bar |
 | Observability — SQLite | ✅ schema + writers | ✅ + dashboard.py | Schema first, UI later |
 | Observability — LangSmith | ✅ traces wired | ✅ + cost attribution | Free with LangGraph |
 | Cost analysis | ⏸ rough estimate in README | ✅ COST_ANALYSIS.md at 100/1K/10K/100K | Final deliverable |
