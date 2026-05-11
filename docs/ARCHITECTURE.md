@@ -1,8 +1,8 @@
-# ARCHITECTURE.md — AgentForge Multi-Agent Adversarial Evaluation Platform
+# ARCHITECTURE.md — ChartBreaker Multi-Agent Adversarial Evaluation Platform
 
 > **Companion docs:** [`THREAT_MODEL.md`](./THREAT_MODEL.md) (what we attack), [`USERS.md`](./USERS.md) (who we serve), [`COST_ANALYSIS.md`](./COST_ANALYSIS.md) (what it costs).
-> **Target system:** OpenEMR Clinical Co-Pilot module (`interface/modules/custom_modules/oe-module-clinical-copilot/`), deployed on GCE behind Caddy. The Next.js Patient Dashboard is reviewed separately and is **not** an AgentForge target.
-> **Platform code:** AgentForge Python package — lives in its own repository, separate from OpenEMR/PHP.
+> **Target system:** OpenEMR Clinical Co-Pilot module (`interface/modules/custom_modules/oe-module-clinical-copilot/`), deployed on GCE behind Caddy. The Next.js Patient Dashboard is reviewed separately and is **not** an ChartBreaker target.
+> **Platform code:** ChartBreaker Python package — lives in its own repository, separate from OpenEMR/PHP.
 
 ---
 
@@ -16,10 +16,10 @@ The adversarial platform exercises a single live deployment. Targets are not con
 | **Login endpoint** | `https://openemr.136-118-242-198.sslip.io/interface/login/login.php?site=default` |
 | **Co-Pilot API endpoint** | `https://openemr.136-118-242-198.sslip.io/interface/modules/custom_modules/oe-module-clinical-copilot/public/index.php?site=default` |
 | **Site identifier** | `default` |
-| **Auth model** | Dedicated AgentForge test user (NOT admin), provisioned with `patients:demo` ACL and access to a fixed set of fixture patients. Credentials live in `config.py` via env vars `AGENTFORGE_TARGET_USER` + `AGENTFORGE_TARGET_PASSWORD`. |
+| **Auth model** | Dedicated ChartBreaker test user (NOT admin), provisioned with `patients:demo` ACL and access to a fixed set of fixture patients. Credentials live in `config.py` via env vars `CHARTBREAKER_TARGET_USER` + `CHARTBREAKER_TARGET_PASSWORD`. |
 | **Session establishment** | `POST /interface/login/login.php?site=default` with form-encoded `authUser` + `clearPass` + `authProvider`; captures session cookie + initial CSRF token from the response |
 | **CSRF discipline** | Every Co-Pilot POST carries `csrf_token` in body **and** mirrors it as `X-CSRF-Token` header per `CopilotController.php:259` |
-| **Fixture patients** | Per-run pid list pinned in `config.py`; the dedicated test user has explicit ACL access to each. Cross-tenant pids used in Category 2f (authz bypass) attacks belong to a *different* test user — they are not the AgentForge user's patients. |
+| **Fixture patients** | Per-run pid list pinned in `config.py`; the dedicated test user has explicit ACL access to each. Cross-tenant pids used in Category 2f (authz bypass) attacks belong to a *different* test user — they are not the ChartBreaker user's patients. |
 
 **Why a dedicated test user, not admin:**
 - Vulnerability reports must reproduce under a *realistic* clinical user, not under credentials that bypass ACL by construction.
@@ -30,7 +30,7 @@ The adversarial platform exercises a single live deployment. Targets are not con
 
 ## Executive Summary
 
-AgentForge is a multi-agent adversarial evaluation platform that continuously probes the OpenEMR Clinical Co-Pilot for vulnerabilities, validates whether confirmed exploits are reproducible, and converts them into a regression suite that runs on every deploy. It is built as a multi-agent system because the work decomposes naturally along trust boundaries: an agent that *generates* attacks has a conflict of interest with one that *evaluates* them, an agent that *prioritizes* coverage has different inputs than one that *documents* findings, and the *kinds* of attacks differ enough (prompt-craft vs protocol fuzzing vs cost amplification) that one attack generator cannot do all of them well. Collapsing those roles into a single agent — or a deterministic pipeline — produces a tester that flatters its own attacks and cannot adapt as the target changes. AgentForge instead separates them into four primary agents (`Orchestrator`, `RedTeamLead`, `Judge`, `Scribe`) plus a team of attack specialists routed by the RedTeamLead, each backed by a different LLM team or, where appropriate, by deterministic Python tooling. The seven-plus components communicate via a shared LangGraph state store and a SQLite-backed observability layer.
+ChartBreaker is a multi-agent adversarial evaluation platform that continuously probes the OpenEMR Clinical Co-Pilot for vulnerabilities, validates whether confirmed exploits are reproducible, and converts them into a regression suite that runs on every deploy. It is built as a multi-agent system because the work decomposes naturally along trust boundaries: an agent that *generates* attacks has a conflict of interest with one that *evaluates* them, an agent that *prioritizes* coverage has different inputs than one that *documents* findings, and the *kinds* of attacks differ enough (prompt-craft vs protocol fuzzing vs cost amplification) that one attack generator cannot do all of them well. Collapsing those roles into a single agent — or a deterministic pipeline — produces a tester that flatters its own attacks and cannot adapt as the target changes. ChartBreaker instead separates them into four primary agents (`Orchestrator`, `RedTeamLead`, `Judge`, `Scribe`) plus a team of attack specialists routed by the RedTeamLead, each backed by a different LLM team or, where appropriate, by deterministic Python tooling. The seven-plus components communicate via a shared LangGraph state store and a SQLite-backed observability layer.
 
 The control loop is driven by the **Orchestrator** (`orchestrator_agent.py`, OpenAI `gpt-5.4-nano` by default for narrative + deterministic Python for priority math; every LLM-driven role reads its `{provider, model}` from a central registry — see § Model Configuration — so swapping any role is a one-row config edit). On each tick, it reads the observability store — coverage per subcategory, recent verdicts, open Scribe reports, accumulated session cost — and emits a campaign brief: which threat-model subcategory to attack next, which seed case to start from, and how aggressively to mutate. The brief is passed to the **RedTeamLead** (`red_team_lead.py`), a router that dispatches to exactly one specialist based on the subcategory: LLM specialists (Injector, Conversationalist, Smuggler, Impersonator) handle prompt-craft work using uncensored open-weights fine-tunes dispatched via OpenRouter (default `cognitivecomputations/dolphin-mixtral-8x22b`; `nousresearch/hermes-3-llama-3.1-70b` is a configured alternative) because commercially-aligned frontier APIs refuse offensive workflows inconsistently and destroy reproducibility. OpenRouter is a request router, not a model provider — the underlying weights are open, and the specialists can be repointed to a local Ollama deployment via the model registry without code changes when self-hosted inference is preferred. Deterministic specialists (Saboteur for tool-misuse and parameter tampering, Cracker for authorization bypass / CSRF / session-fixation / login brute-force / privilege escalation / trust-boundary violations, Glutton for DoS and cost amplification) handle protocol- and fuzzing-shaped work where the case study explicitly notes traditional security tooling outperforms LLMs. The chosen specialist produces an `AttackAttempt`, which the RedTeamLead forwards to the **Target Client** (`target_client.py`), a thin HTTP wrapper around the deployed Co-Pilot's `briefing` and `followup` endpoints. The Target Client enforces session/CSRF discipline, captures the full response envelope (raw model output, post-verifier output, timing, token usage, audit log ID), and writes a trace row to the observability store.
 
@@ -125,7 +125,7 @@ Everything observable — every prompt, every verdict, every cost dollar, every 
                        └─────────────────────┘
 ```
 
-The loop closes via the observability store: Orchestrator writes the campaign brief there, Judge writes verdicts there, Regression Harness writes regression run results there, and Orchestrator reads all of it on its next tick. No agent calls another directly — they coordinate through the shared store and through the LangGraph state edges defined in `agentforge/graph.py`.
+The loop closes via the observability store: Orchestrator writes the campaign brief there, Judge writes verdicts there, Regression Harness writes regression run results there, and Orchestrator reads all of it on its next tick. No agent calls another directly — they coordinate through the shared store and through the LangGraph state edges defined in `chartbreaker/graph.py`.
 
 ---
 
@@ -134,7 +134,7 @@ The loop closes via the observability store: Orchestrator writes the campaign br
 Each agent has a class name, a code-level handle, a model team, and explicit inputs/outputs/trust level.
 
 ### 1. Conductor — Orchestrator Agent
-- **Class:** `OrchestratorAgent` in `agentforge/agents/orchestrator_agent.py`
+- **Class:** `OrchestratorAgent` in `chartbreaker/agents/orchestrator_agent.py`
 - **Handle:** `orchestrator`
 - **Model team:** OpenAI `gpt-5.4-nano` by default for narrative reasoning over coverage state + deterministic Python for the priority-score math. The math layer is the load-bearing one; the LLM layer is for human-readable campaign rationales in the observability log. Model is configurable per role via the registry (see § Model Configuration); any OpenAI-compatible endpoint (OpenAI, OpenRouter, Ollama, Anthropic) is a drop-in.
 - **Inputs:**
@@ -156,7 +156,7 @@ The Red Team is itself a multi-agent sub-system. Decomposing it along **attack s
 A deliberate design choice: **LLM specialists handle prompt-craft work; deterministic specialists handle protocol, fuzzing, and cost work.** This maps directly to the case study's guidance that "traditional non-AI security tooling may outperform LLMs in deterministic validation, replay testing, fuzzing, and protocol-level analysis."
 
 #### 2.0 RedTeamLead — the router
-- **Class:** `RedTeamLead` in `agentforge/agents/red_team_lead.py`
+- **Class:** `RedTeamLead` in `chartbreaker/agents/red_team_lead.py`
 - **Handle:** `red_team_lead`
 - **Model team:** Deterministic Python routing table keyed on `subcategory_id` + OpenAI `gpt-5.4-nano` (default) for one-sentence narration in the trace ("dispatching Cat 1b to Injector with mutation_budget=5"). Routing is *not* LLM-decided — it's a lookup. The LLM only narrates, never decides.
 - **Inputs:** `CampaignBrief` from Orchestrator
@@ -165,7 +165,7 @@ A deliberate design choice: **LLM specialists handle prompt-craft work; determin
 - **Failure modes:** Unknown `subcategory_id` → halt with an explicit error rather than guess.
 
 #### 2.1 Injector (LLM specialist)
-- **Class:** `InjectionSpecialist` in `agentforge/agents/specialists/injection_specialist.py`
+- **Class:** `InjectionSpecialist` in `chartbreaker/agents/specialists/injection_specialist.py`
 - **Handle:** `injector`
 - **Model team:** Uncensored open-weights fine-tune dispatched via OpenRouter. Default `cognitivecomputations/dolphin-mixtral-8x22b`; alternative `nousresearch/hermes-3-llama-3.1-70b`. Local Ollama deployment (`dolphin-mixtral:8x7b`, `llama3.1:8b`) is an in-registry fallback for air-gapped runs or environments where hosted access is constrained. **Commercially-aligned frontier models (OpenAI `gpt-*` general-purpose, Anthropic Claude, Google Gemini, Grok, base Qwen) are explicitly disallowed for this role** — they refuse offensive prompts inconsistently, which contaminates reproducibility. Uncensored fine-tunes are *trained* to remove the refusal layer; that is what makes them the right pick here, not their provenance.
 - **Covers:** Categories **1a, 1b, 1c, 1e, 1f** (direct injection, indirect via chart text, vision-extracted injection, structured-output coercion, system-prompt extraction) and **3e** (context poisoning via injected chart-text premises).
@@ -175,7 +175,7 @@ A deliberate design choice: **LLM specialists handle prompt-craft work; determin
 - **Failure modes:** Refusal → rotate model; off-topic generation → post-filter; loop → mutation budget cap.
 
 #### 2.2 Conversationalist (LLM specialist)
-- **Class:** `MultiTurnSpecialist` in `agentforge/agents/specialists/multi_turn_specialist.py`
+- **Class:** `MultiTurnSpecialist` in `chartbreaker/agents/specialists/multi_turn_specialist.py`
 - **Handle:** `conversationalist`
 - **Model team:** Same offensive model as Injector (default `cognitivecomputations/dolphin-mixtral-8x22b` via OpenRouter), but with a different system prompt focused on planning a multi-turn arc (establish premise, build credibility, exploit late). Maintains its own *attacker-side* state across turns of a single attempt.
 - **Covers:** Categories **1d** (multi-turn manipulation) and **3a** (conversation-history poisoning).
@@ -185,7 +185,7 @@ A deliberate design choice: **LLM specialists handle prompt-craft work; determin
 - **Failure modes:** Specialist drifts off-script → narration check at each turn; turn count exceeds Co-Pilot's 10-pair cap → terminate.
 
 #### 2.3 Smuggler (LLM specialist)
-- **Class:** `ExfiltrationSpecialist` in `agentforge/agents/specialists/exfiltration_specialist.py`
+- **Class:** `ExfiltrationSpecialist` in `chartbreaker/agents/specialists/exfiltration_specialist.py`
 - **Handle:** `smuggler`
 - **Model team:** Same offensive model as Injector (OpenRouter default). System prompt focused on output-shape work: knows the `SourceAttributionVerifier` and `DomainConstraintVerifier` rules and crafts inputs that produce outputs that *pass through* them while still leaking. Distinct skill from Injector — Smuggler's goal is verifier survival, not system-prompt override.
 - **Covers:** Categories **2a** (PHI in summary fields), **2b** (source-ID forgery), **2d** (vision-extracted PHI escape).
@@ -195,7 +195,7 @@ A deliberate design choice: **LLM specialists handle prompt-craft work; determin
 - **Failure modes:** Same as Injector.
 
 #### 2.4 Saboteur (deterministic specialist)
-- **Module:** `agentforge/agents/specialists/tool_misuse_specialist.py`
+- **Module:** `chartbreaker/agents/specialists/tool_misuse_specialist.py`
 - **Handle:** `saboteur`
 - **Model team:** **None — pure Python.** Parameter fuzzing and tool-pipeline probing is not prompt-craft.
 - **Covers:** Categories **4a** (vision-extraction pipeline as tool-like surface), **4b** (supervisor-graph routing manipulation), **4c** (parameter tampering on the JSON envelope), **4d** (recursive tool calls — placeholder for Phase-15 surface).
@@ -210,7 +210,7 @@ A deliberate design choice: **LLM specialists handle prompt-craft work; determin
 - **Failure modes:** New parameter shape introduced upstream → routing table must be updated; flagged as a coverage gap rather than silently skipped.
 
 #### 2.5 Cracker (deterministic specialist)
-- **Module:** `agentforge/agents/specialists/protocol_specialist.py`
+- **Module:** `chartbreaker/agents/specialists/protocol_specialist.py`
 - **Handle:** `cracker`
 - **Model team:** **None — pure Python**, using libraries like `httpx`, `secrets`, `requests-toolbelt`.
 - **Covers:** Categories **2f** (authz bypass via `pid`), **6a** (CSRF token replay / forgery against `CopilotController.php:259`), **6c** (privilege escalation: ACL bypass + BAA gate flip), **6d** (session fixation / cookie theft against the OpenEMR login flow), **6e** (login brute-force / lockout bypass).
@@ -223,10 +223,10 @@ A deliberate design choice: **LLM specialists handle prompt-craft work; determin
 - **Inputs:** `CampaignBrief` + session credentials from `target_client`
 - **Outputs:** `AttackAttempt` (often a sequence of HTTP requests rather than a single prompt)
 - **Trust level:** **Trusted Python.** Has direct HTTP control of the Target Client — the most privileged specialist. Hardcoded to the `config.py` target URL only.
-- **Failure modes:** A CSRF or session bypass succeeds in ways the Judge can't yet evaluate → escalate to human review automatically. Login brute-force is rate-capped at the Cracker layer (independent of any server-side throttle) so the platform does not accidentally lock the AgentForge test user out.
+- **Failure modes:** A CSRF or session bypass succeeds in ways the Judge can't yet evaluate → escalate to human review automatically. Login brute-force is rate-capped at the Cracker layer (independent of any server-side throttle) so the platform does not accidentally lock the ChartBreaker test user out.
 
 #### 2.6 Glutton (deterministic specialist)
-- **Module:** `agentforge/agents/specialists/cost_amplifier.py`
+- **Module:** `chartbreaker/agents/specialists/cost_amplifier.py`
 - **Handle:** `glutton`
 - **Model team:** **None — pure Python.** Generates pathological inputs and measures actual cost/latency impact.
 - **Covers:** Categories **5a** (token exhaustion), **5b** (rate-limit bypass via session rotation), **5c** (infinite loops via recursive multi-turn), **5d** (vision-extraction abuse), **5e** (long-prompt amplification). Synthesis: **cost amplification**.
@@ -242,14 +242,14 @@ A deliberate design choice: **LLM specialists handle prompt-craft work; determin
 - **Failure modes:** Glutton hits the platform's own cost ceiling → halts and surfaces the ratio of attacker cost to target cost as the finding.
 
 #### 2.7 Impersonator (LLM specialist — optional, foldable)
-- **Class:** `PersonaSpecialist` in `agentforge/agents/specialists/persona_specialist.py`
+- **Class:** `PersonaSpecialist` in `chartbreaker/agents/specialists/persona_specialist.py`
 - **Handle:** `impersonator`
 - **Model team:** Same offensive model as Injector (OpenRouter default).
 - **Covers:** Category **6b** (persona hijacking).
 - **Decision:** Whether to ship this separately or fold its prompt into Injector is an MVP tactical call (see table below). For Final, separate specialist gives cleaner coverage attribution; for MVP, folding is acceptable.
 
 ### 3. Conduit — Target Client (not an agent, by design)
-- **Class:** `TargetClient` in `agentforge/target_client.py`
+- **Class:** `TargetClient` in `chartbreaker/target_client.py`
 - **Handle:** `target_client`
 - **Model team:** None — deterministic HTTP, intentionally.
 - **Why not an agent:** The interface to the deployed Co-Pilot must be reproducible and free of nondeterministic decision-making. Wrapping it in an LLM-driven agent would obscure HTTP-layer failures and make session/CSRF debugging miserable. It is documented here so reviewers know it was a deliberate non-choice.
@@ -259,7 +259,7 @@ A deliberate design choice: **LLM specialists handle prompt-craft work; determin
   - `POST /interface/modules/custom_modules/oe-module-clinical-copilot/public/run-extraction.php` — vision extraction (Saboteur Cat 4a probes)
   - `POST /interface/login/login.php?site=default` — additional login probes for Cracker Cat 6d (session fixation) and 6e (brute-force / lockout), beyond the routine session-establishment use already listed above
 - **Responsibilities:**
-  - Authenticate as the dedicated AgentForge test user (env-configured credentials); capture session cookie + CSRF token
+  - Authenticate as the dedicated ChartBreaker test user (env-configured credentials); capture session cookie + CSRF token
   - Refresh the session when the cookie expires; the refresh is itself a logged trace event (relevant to Cat 5b rate-limit-bypass cases)
   - Dispatch Co-Pilot requests with body `csrf_token` AND mirrored `X-CSRF-Token` header per `CopilotController.php:259`
   - Capture: raw HTTP response, HTTP status, end-to-end latency, response token counts from provider headers, audit log ID if exposed in the response envelope
@@ -271,7 +271,7 @@ A deliberate design choice: **LLM specialists handle prompt-craft work; determin
   - CSRF token rotation mid-run → re-fetch from the next response; cap retries
 
 ### 4. Arbiter — Judge Agent
-- **Class:** `JudgeAgent` in `agentforge/agents/judge_agent.py`
+- **Class:** `JudgeAgent` in `chartbreaker/agents/judge_agent.py`
 - **Handle:** `judge`
 - **Model team:** OpenAI `gpt-5.4-nano` by default for semantic verdicts + deterministic Python (regex/schema) replay of `SourceAttributionVerifier` and `DomainConstraintVerifier` lifted from the Co-Pilot module. **Caveat — known calibration risk:** the Co-Pilot target itself runs `gpt-5.4-mini` (per `THREAT_MODEL.md`); running a weaker-class Judge against a stronger-class target is a known accuracy risk on semantic verdicts. The nano default is a cost choice; operators are expected to escalate the Judge model in the registry to a stronger OpenAI model whenever the calibration set in `evals/judge_calibration.yaml` shows degraded accuracy. The verifier-replay half of the verdict is unaffected by this choice — it is pure Python.
 - **Inputs:** `AttackAttempt` + `TargetResponse`
@@ -284,7 +284,7 @@ A deliberate design choice: **LLM specialists handle prompt-craft work; determin
   - Judge uncertain → emits `partial` and recommends `mutate`; never auto-escalates to `critical` without verifier-replay agreement
 
 ### 5. Vault — Regression Harness (not an agent, deterministic)
-- **Module:** `agentforge/regression.py` + fixtures in `evals/regression_cases.yaml`
+- **Module:** `chartbreaker/regression.py` + fixtures in `evals/regression_cases.yaml`
 - **Handle:** `regression`
 - **Model team:** None — deterministic Python.
 - **Why not an agent:** A regression test that "passes because the model's behavior changed" is worse than no test. Regression verdicts must be deterministic and version-pinned. An LLM-driven regression runner would re-introduce the drift problem we're trying to detect.
@@ -295,7 +295,7 @@ A deliberate design choice: **LLM specialists handle prompt-craft work; determin
 - **Failure modes:** A case that drifts because the model was upgraded silently is recorded but flagged for human triage, not auto-discarded.
 
 ### 6. Scribe — Documentation Agent
-- **Class:** `DocumentationAgent` in `agentforge/agents/documentation_agent.py`
+- **Class:** `DocumentationAgent` in `chartbreaker/agents/documentation_agent.py`
 - **Handle:** `scribe`
 - **Model team:** OpenAI `gpt-5.4-nano` by default. Operators typically escalate Scribe to a stronger OpenAI model (set in the registry) for Final-deliverable vulnerability reports where prose quality matters.
 - **Inputs:** `Verdict{semantic: fail, severity: medium+}` + `AttackAttempt` + `TargetResponse` + the relevant `THREAT_MODEL.md` subcategory entry
@@ -317,9 +317,9 @@ The expanded layout, with annotations on additions beyond your sketch.
   /apps/dashboard
   ...
 
-/agentforge                          # all platform code, isolated from OpenEMR
+/chartbreaker                          # all platform code, isolated from OpenEMR
   __init__.py
-  cli.py                             # entrypoint: agentforge run|seed|regress|report
+  cli.py                             # entrypoint: chartbreaker run|seed|regress|report
   config.py                          # target URL, model handles, budgets, secrets
   target_client.py                   # HTTP wrapper for Co-Pilot endpoints
   graph.py                           # ADDED — LangGraph state graph wiring all agents
@@ -379,7 +379,7 @@ The expanded layout, with annotations on additions beyond your sketch.
 /ARCHITECTURE.md                     # this document
 /USERS.md                            # TBD
 /COST_ANALYSIS.md                    # TBD — Final deliverable
-/README.md                           # TBD — setup, deployed URL, how to run AgentForge
+/README.md                           # TBD — setup, deployed URL, how to run ChartBreaker
 
 ```
 
@@ -448,7 +448,7 @@ priority = (
 The top-scored subcategory selects a seed case; the mutation budget is set based on how many near-misses (`partial` verdicts) the subcategory has accumulated. The LLM layer narrates the choice ("focusing on Category 2b source-ID forgery because it's high-severity, 0% coverage, and a recent commit touched `SourceAttributionVerifier`") and the narration is logged as the campaign rationale.
 
 **Trigger sources for the loop:**
-- *Manual:* `agentforge run` from the CLI.
+- *Manual:* `chartbreaker run` from the CLI.
 - *Time-based:* cron-triggered campaign every N hours (configurable; off by default in dev).
 - *Deploy-triggered:* a webhook from the OpenEMR deploy pipeline kicks a regression-only sweep.
 - *Cost-bounded:* every loop iteration checks accumulated cost against the campaign's `max_cost_usd`. Halts with a graceful summary written to the observability store.
@@ -519,7 +519,7 @@ The platform is autonomous up to four hard gates:
 
 ## Framework, State, and Coordination
 
-- **Language:** Python 3.12, Pydantic v2 for state objects, `httpx` for the Target Client (async ready for concurrent campaigns) and for all LLM dispatch. A thin `llm_client.py` speaks the OpenAI-compatible chat-completion surface, which is the shared interface for **OpenAI, OpenRouter, Ollama, and Anthropic** — every LLM-driven role reads `{provider, model}` from `MODEL_REGISTRY` in `config.py` (see § Model Configuration).
+- **Language:** Python 3.10+ (validated against 3.10.10), Pydantic v2 for state objects, `httpx` for the Target Client (async ready for concurrent campaigns) and for all LLM dispatch. A thin `llm_client.py` speaks the OpenAI-compatible chat-completion surface, which is the shared interface for **OpenAI, OpenRouter, Ollama, and Anthropic** — every LLM-driven role reads `{provider, model}` from `MODEL_REGISTRY` in `config.py` (see § Model Configuration).
 - **Coordination framework:** LangGraph 0.2+ for state graph, LangSmith for hosted traces (optional but recommended), SQLite (stdlib) for the canonical state store.
 - **State management:** Two layers. LangGraph in-memory state for an active run; SQLite + JSONL on disk as the durable log. Nothing important lives only in process memory.
 - **Concurrency model:** Single-threaded loop in MVP. Async-ready Target Client so a future Orchestrator can issue concurrent campaigns against the same target without code churn. Concurrency against the live target is rate-limit-gated by the Co-Pilot itself (30/min/session) — useful adversarial signal in its own right.
@@ -528,7 +528,7 @@ The platform is autonomous up to four hard gates:
 
 ## Model Configuration — The Control Panel
 
-Every LLM-driven role reads its `{provider, model}` from a central `MODEL_REGISTRY` dict in `config.py`. Swapping the model for any role — escalating the Judge from `gpt-5.4-nano` to a stronger OpenAI model for a Final-quality regression sweep, repointing the Injector from OpenRouter to a local Ollama instance for an air-gapped run, or trying a different uncensored fine-tune for one specialist — is a one-row config edit, not a code change. The dispatch layer (`agentforge/llm_client.py`) is a thin async wrapper over the OpenAI-compatible `/v1/chat/completions` surface, which **OpenAI, OpenRouter, Ollama, and Anthropic** all speak (Anthropic also offers its native `/v1/messages`, which we support but do not require).
+Every LLM-driven role reads its `{provider, model}` from a central `MODEL_REGISTRY` dict in `config.py`. Swapping the model for any role — escalating the Judge from `gpt-5.4-nano` to a stronger OpenAI model for a Final-quality regression sweep, repointing the Injector from OpenRouter to a local Ollama instance for an air-gapped run, or trying a different uncensored fine-tune for one specialist — is a one-row config edit, not a code change. The dispatch layer (`chartbreaker/llm_client.py`) is a thin async wrapper over the OpenAI-compatible `/v1/chat/completions` surface, which **OpenAI, OpenRouter, Ollama, and Anthropic** all speak (Anthropic also offers its native `/v1/messages`, which we support but do not require).
 
 **Default registry (MVP):**
 
@@ -627,6 +627,6 @@ The platform's component count is intentional; not every component ships by the 
 
 ## What This Architecture Buys You vs. A Pipeline
 
-A linear pipeline (`generate → call target → check → report`) gets you a one-shot test runner. AgentForge gets you a *learning loop*: every verdict feeds priority math, every priority decision shapes the next attack, every confirmed exploit pins itself into the regression suite so a future fix has to clear it. The agent separation isn't ornamental — it is what prevents the most common failure modes (judge-drift, attack/judge collusion, attack-shape monoculture from a one-size generator, runaway cost, false-positive reports) that destroy single-agent or pipeline platforms when they're asked to run autonomously for weeks at a time. Splitting the Red Team into prompt-craft specialists and deterministic specialists, then routing through a deliberate lead, is what makes each finding traceable to the right kind of tooling — and is what lets a CISO defend the choice of when AI is in the loop and when it isn't.
+A linear pipeline (`generate → call target → check → report`) gets you a one-shot test runner. ChartBreaker gets you a *learning loop*: every verdict feeds priority math, every priority decision shapes the next attack, every confirmed exploit pins itself into the regression suite so a future fix has to clear it. The agent separation isn't ornamental — it is what prevents the most common failure modes (judge-drift, attack/judge collusion, attack-shape monoculture from a one-size generator, runaway cost, false-positive reports) that destroy single-agent or pipeline platforms when they're asked to run autonomously for weeks at a time. Splitting the Red Team into prompt-craft specialists and deterministic specialists, then routing through a deliberate lead, is what makes each finding traceable to the right kind of tooling — and is what lets a CISO defend the choice of when AI is in the loop and when it isn't.
 
 That is the platform a hospital CISO is choosing whether to trust. This document is the case for it.

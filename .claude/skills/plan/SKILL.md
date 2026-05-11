@@ -1,6 +1,6 @@
 ---
 name: plan
-description: Convert AgentForge's multi-doc design set (ARCHITECTURE + PROJECT_STRATEGY + USERS + THREAT_MODEL + ASSIGNMENT) into an execution-ready build plan with phases, tickets, dependencies, and status tracking
+description: Convert ChartBreaker's multi-doc design set (ARCHITECTURE + PROJECT_STRATEGY + USERS + THREAT_MODEL + ASSIGNMENT) into an execution-ready build plan with phases, tickets, dependencies, and status tracking
 ---
 
 Plan this product strictly from the design documents already in the repo.
@@ -13,11 +13,11 @@ This project does not have a single `/spec.md`. The role of "spec" is distribute
 
 Read each in full. Each is the source of truth for a different dimension; treat it as authoritative within its dimension and defer to it when documents disagree.
 
-- **/ASSIGNMENT.md** (REQUIRED) — Source of truth for *what must ship* and *by when*. The rubric, the hard gates, the deliverable list. Plan tickets must trace to assignment requirements.
-- **/ARCHITECTURE.md** (REQUIRED) — Source of truth for *technical design*. Agent roster, model registry, file layout, framework choices, inter-agent communication, trust boundaries.
-- **/PROJECT_STRATEGY.md** (REQUIRED) — Source of truth for *operating model, acceptance criteria, scope boundaries, and the seed ticket list*. Hosting topology, interface choices, success thresholds (MVP and Final), non-goals, platform SLOs, and the "Refreshed Immediate Gaps" table — which is a pre-seeded ticket list the plan should build on, not duplicate.
-- **/USERS.md** (REQUIRED) — Source of truth for *who we are building for*. Personas, workflows, automation justification. Tickets that affect a user surface must trace to a persona workflow.
-- **/THREAT_MODEL.md** (REQUIRED) — Source of truth for *what the platform tests against*. Attack categories, subcategories, coverage map. Tickets that build a specialist or eval must trace to threat-model subcategories.
+- **/docs/ASSIGNMENT.md** (REQUIRED) — Source of truth for *what must ship* and *by when*. The rubric, the hard gates, the deliverable list. Plan tickets must trace to assignment requirements.
+- **/docs/ARCHITECTURE.md** (REQUIRED) — Source of truth for *technical design*. Agent roster, model registry, file layout, framework choices, inter-agent communication, trust boundaries.
+- **/docs/PROJECT_STRATEGY.md** (REQUIRED) — Source of truth for *operating model, acceptance criteria, scope boundaries, and the seed ticket list*. Hosting topology, interface choices, success thresholds (MVP and Final), non-goals, platform SLOs, and the "Refreshed Immediate Gaps" table — which is a pre-seeded ticket list the plan should build on, not duplicate.
+- **/docs/USERS.md** (REQUIRED) — Source of truth for *who we are building for*. Personas, workflows, automation justification. Tickets that affect a user surface must trace to a persona workflow.
+- **/docs/THREAT_MODEL.md** (REQUIRED) — Source of truth for *what the platform tests against*. Attack categories, subcategories, coverage map. Tickets that build a specialist or eval must trace to threat-model subcategories.
 - **/ux.md** (OPTIONAL, clarification only) — If present, use only for clarifying interaction details; do not expand scope based on it.
 
 If any of the REQUIRED documents is missing, stop and report what is missing rather than guessing.
@@ -39,7 +39,7 @@ When all five would inform the same decision (e.g., "do we build the Streamlit d
 ---
 
 ## Update output in:
-- /BUILD_PLAN.md
+- /docs/BUILD_PLAN.md
 
 ---
 
@@ -77,20 +77,20 @@ Translate the design-document set into a durable, execution-ready build plan tha
 
 ---
 
-## Required Output Format (/BUILD_PLAN.md)
+## Required Output Format (/docs/BUILD_PLAN.md)
 
 # Build Plan
 
 ## Project
-- Name: AgentForge — Multi-Agent Adversarial Evaluation Platform
+- Name: ChartBreaker — Multi-Agent Adversarial Evaluation Platform
 - Summary: <1-2 sentences from THREAT_MODEL exec summary + PROJECT_STRATEGY § User-Facing Goal>
 
 ## Source of Truth
-- Assignment: /ASSIGNMENT.md
-- Strategy / acceptance criteria / non-goals: /PROJECT_STRATEGY.md
-- Technical design: /ARCHITECTURE.md
-- Personas / workflows: /USERS.md
-- Attack-surface model: /THREAT_MODEL.md
+- Assignment: /docs/ASSIGNMENT.md
+- Strategy / acceptance criteria / non-goals: /docs/PROJECT_STRATEGY.md
+- Technical design: /docs/ARCHITECTURE.md
+- Personas / workflows: /docs/USERS.md
+- Attack-surface model: /docs/THREAT_MODEL.md
 - UX clarifications (if used): /ux.md
 
 ## Planning Assumptions
@@ -182,7 +182,7 @@ After each implementation pass:
 ## Behavior
 
 - If PROJECT_STRATEGY § Refreshed Immediate Gaps already exists, treat it as the seed and expand each row into a full ticket. Do not duplicate work that table already enumerates.
-- If a /BUILD_PLAN.md already exists, update it only if explicitly asked; otherwise create from scratch.
+- If a /docs/BUILD_PLAN.md already exists, update it only if explicitly asked; otherwise create from scratch.
 - If a REQUIRED input document is missing, stop and list what is missing.
 - If an input document is unclear or two documents disagree, apply the conflict-resolution order, state the assumption in § Planning Assumptions, and proceed. Do not silently choose.
 - If ARCHITECTURE specifies a class, file path, or framework, use it verbatim in ticket "Files likely involved" — do not guess alternatives.
@@ -190,5 +190,5 @@ After each implementation pass:
 ---
 
 After writing:
-- Confirm file created: /BUILD_PLAN.md
+- Confirm file created: /docs/BUILD_PLAN.md
 - STOP

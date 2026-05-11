@@ -1,4 +1,4 @@
-# AgentForge Project Strategy
+# ChartBreaker Project Strategy
 
 ## User-Facing Goal
 
@@ -24,7 +24,7 @@ The strategic bar is not "find a flashy jailbreak." The bar is "a hospital CISO 
 
 ## Strategic Positioning
 
-AgentForge should be presented as a repeatable evaluation platform with two operating modes:
+ChartBreaker should be presented as a repeatable evaluation platform with two operating modes:
 
 - **On-demand suite run:** execute the current seed and regression cases once against the live target, produce verdicts, costs, and reports, then stop. This is the MVP/demo path and the safest default for a reviewer.
 - **Continuous/adaptive mode:** run the same loop on a schedule or trigger, use observability to choose follow-up campaigns, mutate partial successes, and re-run regressions after target changes.
@@ -74,7 +74,7 @@ Avoid expanding into unrelated OpenEMR core security unless it directly affects 
 | Unknown | Recommended answer | Why |
 |---|---|---|
 | What exact live target should be submitted? | Use `https://openemr.136-118-242-198.sslip.io` from `ARCHITECTURE.md`, unless credentials or availability changed. | The architecture already names it; changing targets late creates demo risk. |
-| Are live target credentials available? | Assume `AGENTFORGE_TARGET_USER` and `AGENTFORGE_TARGET_PASSWORD` will be provided through environment variables. | Avoid hardcoding credentials and preserve auditability. |
+| Are live target credentials available? | Assume `CHARTBREAKER_TARGET_USER` and `CHARTBREAKER_TARGET_PASSWORD` will be provided through environment variables. | Avoid hardcoding credentials and preserve auditability. |
 | Which framework manages state? | Use LangGraph for agent state and SQLite/JSONL for durable traces. | Matches `ARCHITECTURE.md` and gives replayable decisions without overbuilding infrastructure. |
 | What model powers Red Team? | Uncensored open-weights fine-tune via **OpenRouter** for prompt-craft specialists (default `cognitivecomputations/dolphin-mixtral-8x22b`); deterministic Python for protocol specialists. Local Ollama is an in-registry fallback. | Removes refusal-layer contamination without operating local GPU infra; one-row config swap to Ollama or to a different fine-tune. |
 | What model powers Judge/Scribe/Orchestrator? | **OpenAI `gpt-5.4-nano` by default**, configurable per role via `MODEL_REGISTRY` in `config.py`. Calibration set in `evals/judge_calibration.yaml` is the trip-wire for escalating the Judge model. | Cost default that co-locates Judge inference with the target's provider family (`gpt-5.4-mini`); one-line escalation when calibration degrades. |
@@ -90,7 +90,7 @@ Avoid expanding into unrelated OpenEMR core security unless it directly affects 
 
 ## Logging and State Store Requirement
 
-AgentForge needs a durable run ledger that updates while the Red Team is working, not only after the suite finishes. The human operator should be able to answer, at any point in a run:
+ChartBreaker needs a durable run ledger that updates while the Red Team is working, not only after the suite finishes. The human operator should be able to answer, at any point in a run:
 
 - Which campaign is active?
 - Which agent or specialist is currently working?
@@ -142,7 +142,7 @@ Sensitive data rule: store enough to reproduce the test, but do not persist raw 
 
 Lead with the problem: clinical LLM defenses are soft, stateful, and expensive to test manually.
 
-Then make the architecture claim: AgentForge is a multi-agent loop where each role has a bounded responsibility and trust level.
+Then make the architecture claim: ChartBreaker is a multi-agent loop where each role has a bounded responsibility and trust level.
 
 Then defend the top choices:
 
@@ -160,20 +160,20 @@ Close with evidence: current threat model, seed suite across four categories, ca
 
 ## Operating Model
 
-The PRD-shaped questions about *where AgentForge runs*, *how operators interact with it*, and *what data lives where* are answered below. These are deliberately additive to `ARCHITECTURE.md`, which covers the *technical* architecture; this section covers the *operational* architecture.
+The PRD-shaped questions about *where ChartBreaker runs*, *how operators interact with it*, and *what data lives where* are answered below. These are deliberately additive to `ARCHITECTURE.md`, which covers the *technical* architecture; this section covers the *operational* architecture.
 
 ### Hosting Topology (Tiered)
 
-AgentForge is not a single deployable artifact — it is three operational surfaces, each placed where the latency, cost, and trust model fit best.
+ChartBreaker is not a single deployable artifact — it is three operational surfaces, each placed where the latency, cost, and trust model fit best.
 
 | Component | Where it runs | Why there | Cost |
 |---|---|---|---|
 | Operator-driven campaigns (interactive CLI runs) | **Operator laptop** | CLI tool with full access to the operator's credentials and SQLite store; no reason to push to a server during MVP | $0 |
 | Scheduled regression sweeps | **GitHub Actions cron** (or any CI) | Matches the rubric's "deploy-triggered regression" pattern; secrets in repo-level settings; audit trail in Actions logs; concurrency-1 to avoid clobbering `runs.sqlite` | Free at MVP volume |
 | Always-on observability dashboard | **Small VM** (Fly.io, Railway, or a $5 DigitalOcean droplet) | Needs a public HTTPS URL for the CISO/reviewer audience; pulls from a synced copy of `runs.sqlite` | ~$5–10/month |
-| OpenEMR Clinical Co-Pilot (target) | Existing GCE VM | Out-of-scope for AgentForge hosting; documented under § Target Deployment in `ARCHITECTURE.md` | — |
+| OpenEMR Clinical Co-Pilot (target) | Existing GCE VM | Out-of-scope for ChartBreaker hosting; documented under § Target Deployment in `ARCHITECTURE.md` | — |
 
-**Hard rule: AgentForge does not co-locate with the target.** Even though both VMs are operated by the same person, the threat-model posture is "external adversary" and co-location accidentally grants AgentForge network privileges it should not have. The single-target invariant in `ARCHITECTURE.md` § Human Approval Gates is the technical enforcement of this posture.
+**Hard rule: ChartBreaker does not co-locate with the target.** Even though both VMs are operated by the same person, the threat-model posture is "external adversary" and co-location accidentally grants ChartBreaker network privileges it should not have. The single-target invariant in `ARCHITECTURE.md` § Human Approval Gates is the technical enforcement of this posture.
 
 **MVP submission specifics:** laptop CLI + `runs.sqlite` artifact committed to a private branch is sufficient. **Final submission:** spin up the dashboard with a public URL — it is the most demo-able artifact and is the answer to the rubric's observability questions.
 
@@ -181,7 +181,7 @@ AgentForge is not a single deployable artifact — it is three operational surfa
 
 | Surface | Built for MVP? | Tech | Justification |
 |---|---|---|---|
-| CLI — `agentforge run / seed / regress / report` | ✅ Yes, primary | Click or Typer | Scriptable, fits CI, audit trail in shell history, what security operators expect |
+| CLI — `chartbreaker run / seed / regress / report` | ✅ Yes, primary | Click or Typer | Scriptable, fits CI, audit trail in shell history, what security operators expect |
 | Observability dashboard (read-only) | ✅ Yes, required | Streamlit reading `observability/runs.sqlite` | Renders coverage, verdicts over time, cost per agent, open reports. ~200 lines. The CISO-facing artifact. |
 | Interactive GUI for triggering campaigns | ❌ No | — | Adds attack surface, auth complexity, schedule risk. CLI + cron covers the use case. |
 | Public HTTP API for external integration | ❌ No (for now) | — | YAGNI for Week 3. Documented as a future-state non-goal. |
@@ -194,7 +194,7 @@ The existing § Logging and State Store Requirement settles SQLite-for-MVP and P
 
 | Question | Answer |
 |---|---|
-| **Schema versioning** | Alembic-style migrations under `agentforge/observability/migrations/`. Every schema change ships a migration + a `runs.sqlite` rollback test. Schema-incompatible changes bump a `schema_version` column on the `runs` table; older rows are migrated forward, never silently reformatted. |
+| **Schema versioning** | Alembic-style migrations under `chartbreaker/observability/migrations/`. Every schema change ships a migration + a `runs.sqlite` rollback test. Schema-incompatible changes bump a `schema_version` column on the `runs` table; older rows are migrated forward, never silently reformatted. |
 | **Retention** | Operational traces (`agent_events`, `target_responses`, `costs`) rotate at 90 days into an `archive/` directory of compressed JSONL. **Findings, regression-pinned exploits, and Judge verdicts are retained indefinitely** — they are the evidence layer. |
 | **Backup** | `runs.sqlite` is backed up to object storage (S3-compatible) on every successful CI regression run. The platform's value is the regression history; losing it loses the "did the fix hold over time" signal. |
 | **PHI at rest** | Fixture patients are synthetic by construction (see `target_deployment.md` — dedicated test user with explicit ACL access to a pinned synthetic fixture set). The platform is **not** HIPAA-covered because no real PHI is in scope. Raw `TargetResponse` bodies are still post-redacted by `redactor.py` before insert as a defense-in-depth measure; full raw capture requires an explicit `--debug-capture-raw` flag. |
@@ -206,12 +206,12 @@ The existing § Logging and State Store Requirement settles SQLite-for-MVP and P
 | `OPENAI_API_KEY` | Operator's `.env` (gitignored) for laptop runs; GitHub Actions secret for CI | Manual, quarterly | Operator + CI |
 | `OPENROUTER_API_KEY` | Same | Manual, quarterly | Operator + CI |
 | `ANTHROPIC_API_KEY` (optional, registry-only) | Same | Manual, quarterly | Operator + CI |
-| `AGENTFORGE_TARGET_USER` / `AGENTFORGE_TARGET_PASSWORD` | Same; the *dedicated* test user, not admin | On any incident or every 90 days | Operator + CI |
+| `CHARTBREAKER_TARGET_USER` / `CHARTBREAKER_TARGET_PASSWORD` | Same; the *dedicated* test user, not admin | On any incident or every 90 days | Operator + CI |
 | LangSmith API key (optional) | Same | Quarterly | Operator |
 
 **Hard rules:**
 - No secret is committed to the repo. `.env.example` ships with placeholder values; `.env` is in `.gitignore`.
-- The dedicated AgentForge test user is rotated separately from any human credential set on the OpenEMR target.
+- The dedicated ChartBreaker test user is rotated separately from any human credential set on the OpenEMR target.
 - The offensive specialists' API keys (OpenRouter) are *never* shared with the Judge/Scribe stack (OpenAI). Different providers by construction means different secrets to rotate or revoke independently.
 
 ---
@@ -224,7 +224,7 @@ The rubric grades thoroughness and defensibility, but "done" still needs measura
 
 | Criterion | Target | How measured |
 |---|---|---|
-| Live target reachable from CLI | 100% of `agentforge run` invocations authenticate and post to `/copilot` endpoint | `target_client` health check |
+| Live target reachable from CLI | 100% of `chartbreaker run` invocations authenticate and post to `/copilot` endpoint | `target_client` health check |
 | Distinct attack categories with live results | ≥3 (rubric hard gate) | `runs.sqlite` query: distinct `category` in `attempts` where `verdict IS NOT NULL` |
 | At least one agent role live | Injector + Judge running end-to-end against the deployed target | Trace event with `agent='injector'` followed by `agent='judge'` and a `verdict` row written |
 | Verifier-replay verdicts working | Python ports of `SourceAttributionVerifier` + `DomainConstraintVerifier` match Co-Pilot behavior on 100% of test fixtures | `tests/test_verifiers.py` green |
@@ -259,7 +259,7 @@ The rubric appendix demands answers to "How do you prevent the adversarial platf
 | Report-publish gate | Scribe never auto-files; `reports/draft/` requires a human `git mv` to promote to `reports/` (see `ARCHITECTURE.md` § Human Approval Gates). |
 | Regression-retire gate | A regression case is retired only via human commit with explicit reason. The Orchestrator cannot retire cases autonomously. |
 | Privileged target actions | Vision-extraction uploads, BAA-flag tests, and login brute-force probes require an explicit `--allow-privileged` flag. The flag is logged on every use. |
-| Cracker brute-force rate cap | The Cracker specialist's login probes are rate-limited at the Cracker layer (not server-side) to avoid locking out the AgentForge test user during brute-force testing. |
+| Cracker brute-force rate cap | The Cracker specialist's login probes are rate-limited at the Cracker layer (not server-side) to avoid locking out the ChartBreaker test user during brute-force testing. |
 
 ---
 
@@ -278,19 +278,19 @@ The individual agent failure modes are documented per-agent in `ARCHITECTURE.md`
 | Schema-incompatible upgrade attempted | Migration test on startup | Refuse to start until migration is applied; never silently mutate `runs.sqlite`. |
 | Local-vs-CI clock skew | Comparing `git_sha` of regression case vs target | Halt; cases must be replayed against the target version they were pinned to (or explicitly re-pinned). |
 
-**Platform availability SLO:** none in the formal sense. AgentForge is operator-driven; "down" means the operator does not run it. The dashboard is the only always-on surface, and a 24-hour outage on it is a P3, not P1.
+**Platform availability SLO:** none in the formal sense. ChartBreaker is operator-driven; "down" means the operator does not run it. The dashboard is the only always-on surface, and a 24-hour outage on it is a P3, not P1.
 
 ---
 
 ## Non-Goals (for the platform itself)
 
-These are explicit, written-down decisions about what AgentForge *will not* do — both to manage scope and to make the trust posture defensible.
+These are explicit, written-down decisions about what ChartBreaker *will not* do — both to manage scope and to make the trust posture defensible.
 
-- **Not a SIEM, WAF, or HIDS.** AgentForge does not monitor production traffic, detect ongoing attacks, or block in-line. It is an offline / scheduled evaluation system.
-- **Not an auto-remediation tool.** AgentForge proposes fixes through the Scribe; it never edits Co-Pilot code, opens PRs, or triggers deployments.
+- **Not a SIEM, WAF, or HIDS.** ChartBreaker does not monitor production traffic, detect ongoing attacks, or block in-line. It is an offline / scheduled evaluation system.
+- **Not an auto-remediation tool.** ChartBreaker proposes fixes through the Scribe; it never edits Co-Pilot code, opens PRs, or triggers deployments.
 - **Not a multi-target platform.** The single-target invariant is a design commitment, not an MVP shortcut.
 - **Not a multi-tenant SaaS.** No public sign-up, no per-customer isolation. Single-operator for MVP and Final.
-- **Not a general-purpose LLM red-teaming framework.** AgentForge is target-aware: its specialists, verifiers, and seed cases are tuned to the OpenEMR Clinical Co-Pilot. Retargeting requires deliberate, supervised work, not a config flip.
+- **Not a general-purpose LLM red-teaming framework.** ChartBreaker is target-aware: its specialists, verifiers, and seed cases are tuned to the OpenEMR Clinical Co-Pilot. Retargeting requires deliberate, supervised work, not a config flip.
 - **Not a vulnerability disclosure pipeline.** The Scribe drafts reports; routing those reports to a vendor, CVE issuer, or ticketing system is out of scope.
 - **No control GUI.** Triggering campaigns is a CLI operation; reading state is a dashboard operation. We do not merge the two.
 - **No live PHI in test data.** Fixture patients are synthetic; the platform's compliance posture rests on this assumption.
@@ -303,11 +303,11 @@ The platform has its own version, its own changelog, and its own upgrade path �
 
 | Concern | Approach |
 |---|---|
-| Platform version | Semver on `agentforge` Python package. `0.x` while pre-Final. Pin in every regression-case fixture so old cases replay against the platform version that recorded them. |
+| Platform version | Semver on `chartbreaker` Python package. `0.x` while pre-Final. Pin in every regression-case fixture so old cases replay against the platform version that recorded them. |
 | Regression case schema migration | Versioned YAML schema; case fixtures carry `schema_version`; `regression.py` refuses to replay cases written under a future schema. |
 | Judge model bumps | Bumping the Judge model in `MODEL_REGISTRY` requires a full re-run of `judge_calibration.yaml` and an explicit human commit. Verdicts pinned with the old model are flagged for re-verification, not silently inherited. |
 | Target version drift | `runs.sqlite` records the Co-Pilot model + version on every attempt. A target version change triggers a regression sweep + a human triage of any verdicts whose pinned version no longer matches. |
-| AgentForge dependency bumps | `requirements.txt` pinned; `pip-tools` for compiled lock; security advisories from `pip-audit` checked in CI. |
+| ChartBreaker dependency bumps | `requirements.txt` pinned; `pip-tools` for compiled lock; security advisories from `pip-audit` checked in CI. |
 
 ---
 
@@ -315,7 +315,7 @@ The platform has its own version, its own changelog, and its own upgrade path �
 
 | Artifact | Plan |
 |---|---|
-| Demo video (3–5 min) | Three-act structure: (1) the problem — show a manual jailbreak attempt + how slow / unrepeatable it is; (2) the platform — run `agentforge run --campaign cat-1b-injection` and walk through Orchestrator → Injector → Target → Judge → Scribe in the dashboard; (3) the regression — re-run a previously-pinned exploit and show it still fails (or passes if the Co-Pilot fixed it). Record in OBS or Loom; upload to YouTube unlisted. |
+| Demo video (3–5 min) | Three-act structure: (1) the problem — show a manual jailbreak attempt + how slow / unrepeatable it is; (2) the platform — run `chartbreaker run --campaign cat-1b-injection` and walk through Orchestrator → Injector → Target → Judge → Scribe in the dashboard; (3) the regression — re-run a previously-pinned exploit and show it still fails (or passes if the Co-Pilot fixed it). Record in OBS or Loom; upload to YouTube unlisted. |
 | Social post | One post on X or LinkedIn (operator preference) tagging @GauntletAI. One paragraph + one screenshot of the dashboard. Drafted alongside the README. |
 | Reviewer-facing artifacts | Public dashboard URL, repo URL, deployed target URL, demo video link — all linked from the README's top section. |
 
@@ -329,7 +329,7 @@ Ordered by deadline pressure, with owner / dependency notes.
 |---|---|---|---|---|
 | 1 | `USERS.md` draft | MVP submission (Final hard gate) | 1–2 hr | Final |
 | 2 | `README.md` (setup + env vars + deployed URL + run commands) | MVP submission | 1 hr | MVP |
-| 3 | `agentforge/` scaffold: `cli.py`, `config.py`, `llm_client.py`, `state.py`, `target_client.py` | MVP gate 3 (one agent role live) | 4–6 hr | MVP gate 3 |
+| 3 | `chartbreaker/` scaffold: `cli.py`, `config.py`, `llm_client.py`, `state.py`, `target_client.py` | MVP gate 3 (one agent role live) | 4–6 hr | MVP gate 3 |
 | 4 | Injector → Target → Judge end-to-end loop against the deployed target | MVP gate 3 (rubric hard gate) | 4 hr | MVP submit |
 | 5 | Verifier replay (Python ports of `SourceAttributionVerifier` + `DomainConstraintVerifier`) | Judge verdicts | 2–3 hr | Final |
 | 6 | Replace/rescope `AF-SEED-008` (currently targets out-of-scope dashboard JWT) | Eval-suite integrity | 30 min | MVP |
