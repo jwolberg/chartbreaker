@@ -119,3 +119,57 @@ def test_filter_by_run_specific_id(tmp_path: Path) -> None:
     assert len(filtered) == 1
     filtered_other = dashboard._filter_by_run(df, "run_id", "does-not-exist")
     assert filtered_other.empty
+
+
+def test_safe_json_pretty_returns_pretty_for_valid_json() -> None:
+    out = dashboard._safe_json_pretty('{"b":2,"a":1}')
+    # Pretty-printed → multi-line with indentation.
+    assert "\n" in out
+    assert "\"b\": 2" in out
+    assert "\"a\": 1" in out
+
+
+def test_safe_json_pretty_passes_through_non_json() -> None:
+    assert dashboard._safe_json_pretty("not json at all") == "not json at all"
+
+
+def test_safe_json_pretty_handles_none_and_empty() -> None:
+    assert dashboard._safe_json_pretty(None) == ""
+    assert dashboard._safe_json_pretty("") == ""
+
+
+def test_attempt_detail_query_pulls_full_record(tmp_path: Path) -> None:
+    """Smoke-test the SQL the drill-down page uses to load an attempt."""
+    db_path = _make_populated_db(tmp_path)
+    attempts_df = dashboard._load_table(
+        str(db_path), "SELECT attempt_id FROM attempts LIMIT 1"
+    )
+    aid = attempts_df.iloc[0]["attempt_id"]
+
+    detail = dashboard._load_table(
+        str(db_path),
+        f"""SELECT a.*, c.run_id, c.subcategory_id AS campaign_sub,
+                   c.rationale AS campaign_rationale, c.seed_case_id
+            FROM attempts a
+            JOIN campaigns c ON c.campaign_id = a.campaign_id
+            WHERE a.attempt_id = '{aid}'""",
+    )
+    assert len(detail) == 1
+    assert detail.iloc[0]["specialist"] == "injector"
+    assert detail.iloc[0]["campaign_rationale"] == "dashboard smoke test"
+
+
+def test_live_activity_query_returns_recent_events(tmp_path: Path) -> None:
+    """The live tab pulls the latest N agent_events ordered by event_id desc."""
+    db_path = _make_populated_db(tmp_path)
+    df = dashboard._load_table(
+        str(db_path),
+        "SELECT created_at, agent, event_type, attempt_id, payload "
+        "FROM agent_events ORDER BY event_id DESC LIMIT 50",
+    )
+    # The populated DB writes events for run_started, campaign_emitted,
+    # attempt_generated, response_received, verdict_recorded, run_ended.
+    assert not df.empty
+    events = set(df["event_type"].tolist())
+    assert "verdict_recorded" in events
+    assert "campaign_emitted" in events

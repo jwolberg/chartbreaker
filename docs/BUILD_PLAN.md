@@ -295,7 +295,7 @@ Close the five gaps documented in `docs/OBSERVABILITY.md`. The Phase-2 dashboard
   - Files likely involved: `chartbreaker/observability/dashboard.py`
   - Depends on: P2-T11
   - Acceptance criteria covered: closes `docs/OBSERVABILITY.md` Gap #1 (no per-attempt drill-down)
-  - Status: Todo
+  - Status: Complete — `?attempt_id=…` URL renders attack input (prompt / chart / multi-turn turns labeled briefing/followup / HTTP envelope), target response (raw + post-verifier diff, PHP verifier verdicts, response cookies + Set-Cookie headers), Judge verdict, cost rows, and per-attempt event timeline. Open-vulns table has a clickable `🔍 detail` LinkColumn. Smoke: `HTTP 200` against a live attempt_id.
 
 - **P2.5-T2 — LLM I/O payload trace flag**
   - Objective: `chartbreaker/llm_client.py` gains an optional payload-trace hook. New CLI flag `--trace-llm-io` enables it; when set, every `chat()` call appends `{ts, role, provider, model, messages, response_content, prompt_tokens, completion_tokens, usd}` to `observability/llm-trace-<run_id>.jsonl`. Off by default to avoid bloating disk on long runs.
@@ -309,7 +309,7 @@ Close the five gaps documented in `docs/OBSERVABILITY.md`. The Phase-2 dashboard
   - Files likely involved: `chartbreaker/observability/dashboard.py` (new page block), possibly `chartbreaker/observability/pages/live.py` if multi-page mode is adopted
   - Depends on: P2-T11
   - Acceptance criteria covered: closes `docs/OBSERVABILITY.md` Gap #2 (no live view). Equivalent to `tail -f traces.jsonl` but in the dashboard so screenshots / demo recordings show it.
-  - Status: Todo
+  - Status: Complete — second `st.tabs` tab "📡 Live activity" pulls the latest 50 events ordered by `event_id DESC`, renders them in console-log order, and uses an HTML meta-refresh tag (2s) so no new pip dependency was needed. Newest event is auto-expanded; each event with a payload is an expander showing pretty JSON; each `attempt_id` is a click-through link into the drill-down page.
 
 - **P2.5-T4 — Inter-agent timeline detail in dashboard**
   - Objective: Replace the bucketed "agent × event_type" bar chart with an expandable event list that surfaces `agent_events.payload` JSON inline (folded by default, expand-on-click). Renders the human-readable narration once P2-T12 ships and starts writing rationale into the payload, but is useful immediately for the structured payloads we already emit (e.g. `campaign_emitted` carries `{subcategory_id, mutation_budget}`).
