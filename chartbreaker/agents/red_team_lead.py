@@ -15,6 +15,7 @@ from typing import Literal
 
 from chartbreaker import evals_loader
 from chartbreaker.agents.specialists import (
+    exfiltration_specialist,
     injection_specialist,
     multi_turn_specialist,
     protocol_specialist,
@@ -43,6 +44,10 @@ _ROUTING_TABLE: dict[str, tuple[SpecialistName, bool]] = {
     # Conversationalist covers multi-turn manipulation + history poisoning
     "1d": ("conversationalist", False),
     "3a": ("conversationalist", False),
+    # Smuggler covers output-shape exfiltration + source-ID forgery
+    "2a": ("smuggler", False),
+    "2b": ("smuggler", False),
+    "2d": ("smuggler", False),
     # Cracker covers cross-tenant + CSRF
     "2f": ("cracker", False),
     "6a": ("cracker", False),
@@ -92,6 +97,10 @@ async def dispatch(
 
     if specialist == "conversationalist":
         attempt, cost = await multi_turn_specialist.generate(brief)
+        return attempt, cost
+
+    if specialist == "smuggler":
+        attempt, cost = await exfiltration_specialist.generate(brief)
         return attempt, cost
 
     if specialist == "cracker":

@@ -40,9 +40,9 @@
 ## Current Status
 - **Overall status:** Phase 1 — MVP Floor **complete** (15 of 16 tickets done, P1-T15 LangGraph deferred to Phase 2 with rationale). MVP rubric hard gate met with live evidence across 6 attack categories. Phase 2 in progress (rubric-critical subset T8 → T7 → T1 → T2 → T4 → T5 → T11).
 - **Current phase:** Phase 2 — MVP-to-Final
-- **Current ticket:** P2-T2 (Smuggler specialist)
+- **Current ticket:** P2-T4 (Saboteur full Cat 4)
 - **Blockers:** None
-- **Last updated:** 2026-05-11 after P2-T1 completion
+- **Last updated:** 2026-05-11 after P2-T2 completion
 
 ---
 
@@ -199,10 +199,10 @@ Layer in the components `ARCHITECTURE.md` § MVP vs Final Cut marks as Final-onl
 
 - **P2-T2 — Smuggler specialist (Cat 2a, 2b, 2d)**
   - Objective: LLM specialist focused on output-shape work — crafts inputs that produce outputs that *pass through* the verifiers while still leaking. Includes source-ID forgery probes (Cat 2b — likely-marquee finding).
-  - Files likely involved: `chartbreaker/agents/specialists/exfiltration_specialist.py`
+  - Files likely involved: `chartbreaker/agents/specialists/exfiltration_specialist.py`, `chartbreaker/agents/red_team_lead.py`, `chartbreaker/agents/orchestrator_agent.py`
   - Depends on: P1-T8 (verifier ports needed to design bypasses)
   - Acceptance criteria covered: `ARCHITECTURE.md` § Smuggler; `THREAT_MODEL.md` § Category 2 (2a, 2b, 2d)
-  - Status: Todo
+  - Status: Complete — Smuggler dispatches verifier-bypass prompts for 2a/2b/2d. Each subcategory ships a tailored attack lens; 2b is the marquee source-ID-forgery probe (pattern-only verifier seam). RedTeamLead + Orchestrator wired. 6 unit tests.
 
 - **P2-T3 — Glutton specialist (Cat 5a–5e, cost telemetry)**
   - Objective: Deterministic specialist for token exhaustion, rate-limit bypass via session rotation, self-referential multi-turn loops, vision-extraction abuse, long-prompt amplification. Records `CostObservation` side-channel rows. Budget-gated by Orchestrator because its job is to cost money on purpose.
