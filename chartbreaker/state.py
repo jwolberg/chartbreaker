@@ -200,7 +200,7 @@ class CostObservation(_Frozen):
     """One LLM call's cost telemetry. Written on every dispatch by llm_client."""
 
     campaign_id: str
-    attempt_id: str | None  # None for Orchestrator narration with no attempt
+    attempt_id: str | None = None  # Orchestrator narration calls have no attempt
     agent: str  # role name e.g. "judge_semantic", "injector"
     provider: str  # "openai" / "openrouter" / "ollama" / "anthropic"
     model: str

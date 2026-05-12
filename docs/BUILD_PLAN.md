@@ -124,14 +124,14 @@ Every row in `PROJECT_STRATEGY.md` § Success Criteria § MVP is green:
   - Files likely involved: `chartbreaker/agents/__init__.py`, `chartbreaker/agents/judge_agent.py`
   - Depends on: P1-T4, P1-T8
   - Acceptance criteria covered: `ARCHITECTURE.md` § Arbiter — Judge Agent; `ARCHITECTURE.md` § MVP vs Final Cut "Judge — verifier replay" row
-  - Status: Todo
+  - Status: Complete (commit pending)
 
 - **P1-T10 — `chartbreaker/agents/specialists/injection_specialist.py` (Injector for Cat 1a, 1b)**
   - Objective: MVP Injector covering direct injection (Cat 1a) and indirect injection via chart text (Cat 1b — the marquee finding). Reads seed cases, dispatches via `llm_client` to OpenRouter dolphin-mixtral, returns `AttackAttempt`. Other Category 1 sub-IDs are Phase-2 work.
   - Files likely involved: `chartbreaker/agents/specialists/__init__.py`, `chartbreaker/agents/specialists/injection_specialist.py`
   - Depends on: P1-T4, P1-T5
   - Acceptance criteria covered: `ARCHITECTURE.md` § Injector (LLM specialist); `THREAT_MODEL.md` § Category 1 (1a, 1b); `ARCHITECTURE.md` § MVP vs Final Cut "Injector" row
-  - Status: Todo
+  - Status: Complete (commit pending)
 
 - **P1-T11 — Rubric-gate: Injector → Target → Judge end-to-end against live target**
   - Objective: Wire a minimal end-to-end loop (no Orchestrator priority math, no RedTeamLead routing, no graph yet — a straight `cli.py` script) that loads a Cat 1b seed case, calls Injector, posts to Target Client, runs Judge verifier-replay, writes a verdict row. Run it against three distinct attack categories (1a, 1b, plus a manual Cat 5 token-exhaustion probe) to satisfy the rubric's ≥3 categories requirement. **This ticket is the rubric MVP hard gate — Phase 1 can stop here if time runs out and still pass MVP submission.**
