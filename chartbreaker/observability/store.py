@@ -405,3 +405,53 @@ class ObservabilityStore:
                 (run_id,),
             ).fetchall()
         return {row["agent"]: row["total"] for row in rows}
+
+    # ------------------------------------------------------------------
+    # Orchestrator telemetry helpers — wire the priority formula's inputs.
+    # See docs/ARCHITECTURE.md § Orchestration Strategy.
+    # ------------------------------------------------------------------
+
+    def cost_total_for_run(self, run_id: str) -> float:
+        """Sum every LLM-call USD recorded for a run. 0.0 if none yet."""
+        assert self._conn is not None
+        row = self._conn.execute(
+            "SELECT COALESCE(SUM(c.usd), 0.0) AS total "
+            "FROM costs c JOIN campaigns cm ON cm.campaign_id = c.campaign_id "
+            "WHERE cm.run_id = ?",
+            (run_id,),
+        ).fetchone()
+        return float(row["total"]) if row else 0.0
+
+    def attempts_in_subcategory_for_run(self, run_id: str, subcategory_id: str) -> int:
+        """Count attempts already dispatched against `subcategory_id` in this run.
+
+        Used by the Orchestrator's `coverage_ratio` term to deprioritize
+        subcategories the platform has already exercised in the current
+        run — the more attempts we've already made on a vector, the less
+        urgent the next attempt on the same vector becomes.
+        """
+        assert self._conn is not None
+        row = self._conn.execute(
+            "SELECT COUNT(*) AS n "
+            "FROM attempts a JOIN campaigns cm ON cm.campaign_id = a.campaign_id "
+            "WHERE cm.run_id = ? AND a.subcategory_id = ?",
+            (run_id, subcategory_id),
+        ).fetchone()
+        return int(row["n"]) if row else 0
+
+    def recent_target_versions(self, limit: int = 2) -> list[str]:
+        """Return the N most-recent distinct `target_version` values across runs.
+
+        The Orchestrator's `recent_target_change_signal` lights up when
+        len(versions) >= 2 and they differ — i.e. the target deployed a
+        new model since the last sweep, so the Orchestrator should
+        re-attack with elevated priority across the board.
+        """
+        assert self._conn is not None
+        rows = self._conn.execute(
+            "SELECT DISTINCT target_version FROM runs "
+            "WHERE target_version IS NOT NULL "
+            "ORDER BY started_at DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+        return [row["target_version"] for row in rows if row["target_version"]]

@@ -241,9 +241,23 @@ async def run_mvp_loop(
         store.start_run(run_id, cli_command=cli_command, operator=operator)
         try:
             async with TargetClient() as target:
-                # Orchestrator decides the campaign sequence by priority.
-                # RedTeamLead routes each brief to the right specialist.
-                for brief in orchestrator_agent.plan_initial_briefs():
+                # Stateful per-tick Orchestrator. After each dispatch the
+                # Orchestrator re-scores the remaining queue using live
+                # coverage / cost-burn / target-change / open-regression
+                # telemetry from the observability store.
+                orch = orchestrator_agent.Orchestrator(
+                    store, run_id, budgets=config.BUDGETS
+                )
+                print(
+                    f"  budget:   ${config.BUDGETS.max_run_usd:.2f} max run "
+                    f"/ ${config.BUDGETS.max_campaign_usd:.2f} max campaign"
+                )
+                while orch.has_more():
+                    brief = orch.tick_next_brief()
+                    if brief is None:
+                        # has_more() flipped to False between the check and
+                        # the call (budget-exhausted halt). Stop cleanly.
+                        break
                     await _run_one_brief(
                         brief,
                         run_id,
@@ -251,10 +265,19 @@ async def run_mvp_loop(
                         store,
                         enable_semantic_judge=enable_semantic_judge,
                     )
+                if orch.remaining_count() > 0:
+                    print(
+                        f"\n[orchestrator] halted early with "
+                        f"{orch.remaining_count()} subcategory(ies) un-dispatched — "
+                        f"budget cap reached. Spent "
+                        f"${store.cost_total_for_run(run_id):.4f} of "
+                        f"${config.BUDGETS.max_run_usd:.2f}."
+                    )
                 # Cat 5a is dispatched out-of-band — no Phase-1 specialist owns
                 # token-exhaustion (Glutton lands in Phase 2). It still counts
-                # as a sixth distinct attack category for the rubric.
-                await _run_cat_5a_probe(run_id, target, store)
+                # as a distinct attack category for the rubric.
+                if store.cost_total_for_run(run_id) < config.BUDGETS.max_run_usd:
+                    await _run_cat_5a_probe(run_id, target, store)
         finally:
             store.end_run(run_id)
             if log_handler is not None:

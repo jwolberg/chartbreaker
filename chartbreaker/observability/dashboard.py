@@ -1350,6 +1350,133 @@ def _render_architecture_tab() -> None:
     )
     st.graphviz_chart(_JUDGE_INTERNALS_DOT, use_container_width=True)
 
+    st.divider()
+
+    # ───── Orchestration strategy (how the Conductor picks the next move) ─────
+    st.subheader(
+        "Orchestration Strategy — how the next campaign is picked",
+        help=(
+            "The Orchestrator is a per-tick controller. After each "
+            "dispatched brief it re-reads the observability store and "
+            "re-scores every remaining subcategory. The highest score wins."
+        ),
+    )
+    st.markdown(
+        "On each tick, the Orchestrator computes a priority score for every "
+        "remaining subcategory and dispatches the highest. All five inputs "
+        "are read live from the observability store, so coverage, cost burn, "
+        "target-version changes, and open regression cases all feed back "
+        "into the **next** decision."
+    )
+    st.code(
+        "priority = severity_weight\n"
+        "         * (1 − coverage_ratio)\n"
+        "         * (1 + recent_target_change_signal)\n"
+        "         * (1 − cost_burn_factor)\n"
+        "         * regression_open_multiplier",
+        language="text",
+    )
+
+    st.markdown("**What each input is and where it comes from:**")
+    formula_inputs = pd.DataFrame(
+        [
+            {
+                "input": "severity_weight",
+                "range": "1 → 16 (×2 per tier)",
+                "intent": "static threat-model rubric — criticals win ties",
+                "source": "_SEVERITY_WEIGHT dict (info=1, low=2, medium=4, high=8, critical=16)",
+            },
+            {
+                "input": "coverage_ratio",
+                "range": "0.0 → 1.0",
+                "intent": "deprioritize subcategories we've already attempted",
+                "source": "attempts table, scoped to current run, divided by TARGET_ATTEMPTS_PER_SUBCATEGORY=5",
+            },
+            {
+                "input": "recent_target_change_signal",
+                "range": "0.0 or 1.0",
+                "intent": "boost everything when the target deploys a new model",
+                "source": "runs.target_version — 1.0 when the two most-recent distinct versions differ",
+            },
+            {
+                "input": "cost_burn_factor",
+                "range": "0.0 → 1.0",
+                "intent": "throttle as we approach the run budget; halt at 1.0",
+                "source": "costs.usd summed for this run / BUDGETS.max_run_usd",
+            },
+            {
+                "input": "regression_open_multiplier",
+                "range": "1.0 + (0.5 × n)",
+                "intent": "re-test what's already broken before new vectors",
+                "source": "open cases in evals/regression_cases.yaml for this subcategory",
+            },
+        ]
+    )
+    st.dataframe(
+        formula_inputs,
+        hide_index=True,
+        use_container_width=True,
+        column_config={
+            "input": st.column_config.TextColumn("Input", width="medium"),
+            "range": st.column_config.TextColumn("Range", width="small"),
+            "intent": st.column_config.TextColumn("Why it's there"),
+            "source": st.column_config.TextColumn("How it's wired"),
+        },
+    )
+
+    st.markdown(
+        "**Key behaviors worth understanding:**"
+    )
+    st.markdown(
+        """
+- **Per-tick re-scoring.** The Orchestrator does *not* emit all briefs upfront. After every completed campaign it re-reads the store and picks again. Coverage on the most-recently-attacked subcategory rises, the cost burn factor creeps up, and the next pick reflects both.
+- **Cost-bounded halt.** When `cost_burn_factor` reaches 1.0 (run spend = `BUDGETS.max_run_usd`), `has_more()` returns False and the loop exits cleanly. The CLI prints how many subcategories were un-dispatched and the un-budgeted Cat 5a manual probe is skipped.
+- **Regression boost steers the run.** With 12 pinned regression cases today, the live first 5 ticks pick `6c → 1b → 2d → 2f → 6d` — `6c` jumps ahead of `2f` (both critical) because it has 2 open regression cases to re-test. The "re-test what's broken first" signal works.
+- **Brief rationale embeds the math.** Every `CampaignBrief` rationale carries its priority breakdown — e.g. `Cross-tenant pid swap [priority=16.00, severity=critical, coverage=0.00, burn=0.02, target_chg=0.0, regression_mult=1.00]`. The dashboard timeline expander shows this verbatim, so you can audit *why* each campaign was picked without reading code.
+- **No agent calls another directly.** The Orchestrator never speaks to the RedTeamLead; it writes the `CampaignBrief` to SQLite, and the CLI loop hands the next brief off. The whole control plane is mediated by the observability store.
+        """
+    )
+
+    # Compact decision-flow diagram for the per-tick controller.
+    _ORCHESTRATOR_FLOW_DOT = r"""
+digraph orchestrator_flow {
+  rankdir=TB;
+  bgcolor="transparent";
+  fontname="Helvetica";
+  node [shape=box, style="rounded,filled", fontname="Helvetica",
+        fontsize=12, margin="0.15,0.10"];
+  edge [fontname="Helvetica", fontsize=10, color="#94a3b8"];
+
+  start [label=<<B>Run starts</B><BR/>Orchestrator initialized with<BR/>16-subcategory remaining queue>,
+         fillcolor="#7c3aed", fontcolor="white", shape=oval];
+  hasmore [label=<<B>has_more()?</B><BR/>queue empty? OR<BR/>cost_burn ≥ 1.0?>,
+           fillcolor="#7c3aed", fontcolor="white", shape=diamond];
+  score [label=<<B>For each remaining subcategory:</B><BR/>read store → compute 4 telemetry inputs<BR/>→ priority_score(severity, coverage,<BR/>target_chg, burn, regression_mult)>,
+         fillcolor="#1e3a8a", fontcolor="white"];
+  pick [label=<<B>Pick top-scored</B><BR/>pop from queue<BR/>build CampaignBrief with<BR/>priority breakdown in rationale>,
+        fillcolor="#7c3aed", fontcolor="white"];
+  dispatch [label=<<B>CLI dispatches</B><BR/>RedTeamLead → Specialist →<BR/>TargetClient → Judge<BR/>(rows written to SQLite)>,
+            fillcolor="#ea580c", fontcolor="white"];
+  halt [label=<<B>Halt cleanly</B><BR/>print un-dispatched count<BR/>skip Cat 5a if over budget>,
+        fillcolor="#dc2626", fontcolor="white", shape=oval];
+
+  start    -> hasmore;
+  hasmore  -> score    [label="yes"];
+  hasmore  -> halt     [label="no",  fontcolor="#fbbf24"];
+  score    -> pick;
+  pick     -> dispatch;
+  dispatch -> hasmore  [label="next tick reads fresh store state",
+                        style=dashed, color="#22d3ee", fontcolor="#a5f3fc"];
+}
+"""
+    st.markdown("**Decision-flow diagram:**")
+    st.graphviz_chart(_ORCHESTRATOR_FLOW_DOT, use_container_width=True)
+    st.caption(
+        "💡 Want to see this in action? Open the **📊 Dashboard** tab's "
+        "agent activity timeline and expand any `campaign_emitted` event — "
+        "the JSON payload includes the priority breakdown for that brief."
+    )
+
 
 # ---------------------------------------------------------------------------
 # P2.5-T3 — Live auto-refresh tab

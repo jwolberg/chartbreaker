@@ -538,21 +538,33 @@ On each tick, the Orchestrator computes a priority score per `THREAT_MODEL` subc
 priority = (
     severity_weight                          # static, from THREAT_MODEL
   * (1 - coverage_ratio)                     # fewer attempts = higher priority
-  * (1 + recent_target_change_signal)        # recent code change in Co-Pilot = boost
-  * (1 - cost_burn_factor)                   # near-budget = de-prioritize expensive categories
-  * regression_open_multiplier               # boost if a fix recently shipped
+  * (1 + recent_target_change_signal)        # target_version changed since last run = boost
+  * (1 - cost_burn_factor)                   # near-budget = de-prioritize all categories
+  * regression_open_multiplier               # open regression cases in this sub = boost
 )
 ```
 
-The top-scored subcategory selects a seed case; the mutation budget is set based on how many near-misses (`partial` verdicts) the subcategory has accumulated. The LLM layer narrates the choice ("focusing on Category 2b source-ID forgery because it's high-severity, 0% coverage, and a recent commit touched `SourceAttributionVerifier`") and the narration is logged as the campaign rationale.
+`chartbreaker/agents/orchestrator_agent.py` ships this as a stateful per-tick controller (`Orchestrator(store, run_id, budgets)`). After each completed brief, the controller re-reads the observability store and re-scores every remaining subcategory — coverage, cost burn, and target-change signals all feed back into the next decision.
+
+**How each input is wired:**
+
+| Input | Source | Implementation |
+|---|---|---|
+| `severity_weight` | `THREAT_MODEL.md` per-subcategory rubric | `_SEVERITY_WEIGHT` dict: `info=1, low=2, medium=4, high=8, critical=16` (doubling per tier) |
+| `coverage_ratio` | `attempts` table | `store.attempts_in_subcategory_for_run(run_id, sub) / TARGET_ATTEMPTS_PER_SUBCATEGORY` (capped at 1.0) |
+| `recent_target_change_signal` | `runs.target_version` | `store.recent_target_versions(limit=2)`: 1.0 when the two most-recent distinct versions differ; 0.0 otherwise |
+| `cost_burn_factor` | `costs` table | `store.cost_total_for_run(run_id) / BUDGETS.max_run_usd` (capped at 1.0). When this reaches 1.0, `has_more()` returns False and the loop halts cleanly |
+| `regression_open_multiplier` | `evals/regression_cases.yaml` | `regression.load_cases(include_retired=False)` filtered to the subcategory; `1.0 + (open_count * 0.5)` |
+
+The chosen brief carries its priority breakdown in the `rationale` field (e.g. `"Cross-tenant pid swap [priority=16.00, severity=critical, coverage=0.00, burn=0.02, target_chg=0.0, regression_mult=1.00]"`) so the dashboard timeline shows *why* each campaign was picked. The narration LLM layer (P2-T12, deferred) will replace this stringified breakdown with a human-readable explanation.
 
 **Trigger sources for the loop:**
-- *Manual:* `chartbreaker run` from the CLI.
-- *Time-based:* cron-triggered campaign every N hours (configurable; off by default in dev).
-- *Deploy-triggered:* a webhook from the OpenEMR deploy pipeline kicks a regression-only sweep.
-- *Cost-bounded:* every loop iteration checks accumulated cost against the campaign's `max_cost_usd`. Halts with a graceful summary written to the observability store.
+- *Manual:* `chartbreaker run-mvp-loop` from the CLI.
+- *Time-based:* `.github/workflows/regression-sweep.yml` runs daily at 06:00 UTC; `chartbreaker regress` replays the pinned suite.
+- *Deploy-triggered:* manual `workflow_dispatch` on the same CI workflow, with an option to enable the semantic Judge.
+- *Cost-bounded:* the per-tick controller's `has_more()` returns False once the run's accumulated cost equals `BUDGETS.max_run_usd`. The CLI prints how many subcategories were un-dispatched and ends the run cleanly. **The Cat 5a manual probe is also gated** — it only fires if there's remaining budget after the queue completes.
 
-**Coverage sufficiency:** a subcategory is considered "sufficiently covered" when (a) ≥10 distinct attack attempts have run, (b) the last 5 attempts have produced no new `success` or `partial` verdicts, and (c) at least 2 distinct mutation axes have been tried. The Orchestrator can override this in either direction and logs the override rationale.
+**Coverage sufficiency:** a subcategory's `coverage_ratio` approaches 1.0 as it accumulates attempts; at 1.0 the priority term drops to 0 and the Orchestrator picks elsewhere. `TARGET_ATTEMPTS_PER_SUBCATEGORY = 5` by default — long-running sweeps can raise this.
 
 ---
 
