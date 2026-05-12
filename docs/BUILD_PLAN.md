@@ -38,11 +38,11 @@
 - **Non-goals affecting implementation** (`PROJECT_STRATEGY.md` § Non-Goals): no SIEM/WAF/HIDS, no auto-remediation, no multi-target campaigns, no multi-tenant SaaS, no control GUI (read-only dashboard only), no live PHI (synthetic fixture patients only).
 
 ## Current Status
-- **Overall status:** Phase 1 — MVP Floor **complete** (15/16). Phase 2 rubric-critical subset (T8, T7, T1, T2, T4, T5, T11) **complete**. Remaining Phase-2 tickets (T3 Glutton, T9 Scribe+redactor, T10 cross-cat regression, T12 narration, T6 optional Impersonator) deferred — rubric Exit Criteria are now reachable.
-- **Current phase:** Phase 2 — MVP-to-Final (rubric subset complete)
-- **Current ticket:** none active (Phase 3 or deferred Phase-2 tickets next)
+- **Overall status:** Phase 1 — MVP Floor **complete** (15/16). Phase 2 rubric-critical subset (T8, T7, T1, T2, T4, T5, T11) **complete**. Phase 2.5 (observability expansion, 6 tickets) **added** — non-blocking polish, can run in parallel with Phase 3. Remaining Phase-2 tickets (T3 Glutton, T9 Scribe+redactor, T10 cross-cat regression, T12 narration, T6 optional Impersonator) deferred — rubric Exit Criteria are reachable without them.
+- **Current phase:** Phase 2.5 — Observability Expansion (or Phase 3 — Final Polish; both unblocked)
+- **Current ticket:** none active (operator picks: P2.5 quality-of-life or P3 submission artifacts)
 - **Blockers:** None
-- **Last updated:** 2026-05-11 after P2-T11 completion
+- **Last updated:** 2026-05-11 after Phase 2.5 added to plan
 
 ---
 
@@ -276,6 +276,64 @@ Layer in the components `ARCHITECTURE.md` § MVP vs Final Cut marks as Final-onl
 
 ---
 
+### Phase 2.5 — Observability Expansion (deadline: optional; recommended before Phase 3 demo recording)
+
+**Goal**
+Close the five gaps documented in `docs/OBSERVABILITY.md`. The Phase-2 dashboard answers aggregate questions but is weak at "what is the agent doing right now?" and "show me everything about this one attempt." Phase 2.5 lands the operator quality-of-life improvements that will also make the Phase 3 demo video more compelling. None of these tickets block rubric submission — they are non-blocking polish that can be done in parallel with Phase 3 or skipped if time runs out.
+
+**Exit Criteria**
+- Operator can click any attempt in the dashboard and see prompt + target response + Judge rationale + cost on one screen, without writing SQL.
+- `chartbreaker run-mvp-loop --trace-llm-io` writes every `chat()` call's full request + response to `observability/llm-trace-<run_id>.jsonl`, suitable for grep / jq.
+- A "Live activity" tab in the dashboard auto-refreshes and shows the last N `agent_events` rows in real time.
+- Dashboard timeline panel expands `agent_events.payload` JSON inline so inter-agent communication detail is visible without SQL.
+- Sidebar text input filters open-vulns and verdict-mix panels by substring match on `judge_verdicts.rationale`.
+
+**Tickets**
+
+- **P2.5-T1 — Per-attempt drill-down page in the Streamlit dashboard**
+  - Objective: Add a `?attempt_id=...` Streamlit page that renders the full prompt / chart-text payload / multi-turn sequence / HTTP envelope alongside the target response (raw + post-verifier), Judge verdict + rationale, PHP-verifier verdicts (parsed from `audit_log_id`), response cookies, and cost rows for that attempt. Linked from the "Open vulnerabilities" table — clicking an `attempt_id` opens the detail page.
+  - Files likely involved: `chartbreaker/observability/dashboard.py`
+  - Depends on: P2-T11
+  - Acceptance criteria covered: closes `docs/OBSERVABILITY.md` Gap #1 (no per-attempt drill-down)
+  - Status: Todo
+
+- **P2.5-T2 — LLM I/O payload trace flag**
+  - Objective: `chartbreaker/llm_client.py` gains an optional payload-trace hook. New CLI flag `--trace-llm-io` enables it; when set, every `chat()` call appends `{ts, role, provider, model, messages, response_content, prompt_tokens, completion_tokens, usd}` to `observability/llm-trace-<run_id>.jsonl`. Off by default to avoid bloating disk on long runs.
+  - Files likely involved: `chartbreaker/llm_client.py`, `chartbreaker/cli.py`
+  - Depends on: P1-T5 (llm_client exists)
+  - Acceptance criteria covered: closes `docs/OBSERVABILITY.md` Gap #3 (no LLM payload capture). Unblocks investigation of "what prompt did the Judge build?" and "what raw text did the Injector ask the dolphin-mixtral model to produce?"
+  - Status: Todo
+
+- **P2.5-T3 — Live auto-refresh dashboard view**
+  - Objective: Add a second Streamlit page "Live activity" that polls the most recent ~50 `agent_events` rows every 2 seconds and renders them as a chronological feed (agent, event_type, payload-preview). Uses `st.autorefresh` or equivalent. Bypasses the 10s aggregate-cache used by the main dashboard. Operator can leave this open in a side tab during a run.
+  - Files likely involved: `chartbreaker/observability/dashboard.py` (new page block), possibly `chartbreaker/observability/pages/live.py` if multi-page mode is adopted
+  - Depends on: P2-T11
+  - Acceptance criteria covered: closes `docs/OBSERVABILITY.md` Gap #2 (no live view). Equivalent to `tail -f traces.jsonl` but in the dashboard so screenshots / demo recordings show it.
+  - Status: Todo
+
+- **P2.5-T4 — Inter-agent timeline detail in dashboard**
+  - Objective: Replace the bucketed "agent × event_type" bar chart with an expandable event list that surfaces `agent_events.payload` JSON inline (folded by default, expand-on-click). Renders the human-readable narration once P2-T12 ships and starts writing rationale into the payload, but is useful immediately for the structured payloads we already emit (e.g. `campaign_emitted` carries `{subcategory_id, mutation_budget}`).
+  - Files likely involved: `chartbreaker/observability/dashboard.py`
+  - Depends on: P2-T11
+  - Acceptance criteria covered: closes `docs/OBSERVABILITY.md` Gap #4 (inter-agent comm detail buried in JSON). Pairs naturally with P2-T12 narration.
+  - Status: Todo
+
+- **P2.5-T5 — Rationale search in dashboard sidebar**
+  - Objective: Sidebar text input "Search rationales" that, when non-empty, filters every panel by substring match against `judge_verdicts.rationale`. Lets the operator answer "show me every finding mentioning persona / medication:42 / DISAGREEMENT / BREACH-OK" without SQL. Case-insensitive; empty input = no filter.
+  - Files likely involved: `chartbreaker/observability/dashboard.py`
+  - Depends on: P2-T11
+  - Acceptance criteria covered: closes `docs/OBSERVABILITY.md` Gap #5 (no rationale search)
+  - Status: Todo
+
+- **P2.5-T6 — Run log auto-capture**
+  - Objective: When `chartbreaker run-mvp-loop` runs, also tee its stderr (Python logs) to `observability/run-<run_id>.log` so the verbose trace persists alongside the SQLite + JSONL records. Configurable via `--log-file <path>` or auto-derived from `run_id`. No behavior change to default operator stdout.
+  - Files likely involved: `chartbreaker/cli.py`
+  - Depends on: P1-T11
+  - Acceptance criteria covered: addresses the "logs only go to stderr; nothing persists unless you manually redirect" observation in `docs/OBSERVABILITY.md` § Layer 2
+  - Status: Todo
+
+---
+
 ### Phase 3 — Final Polish (deadline: Fri 2026-05-15 noon)
 
 **Goal**
@@ -365,12 +423,18 @@ Generate the Final-only submission artifacts: vulnerability reports from live fi
 26. P2-T10 — Cross-category regression flagging (after P1-T16)
 27. P2-T11 — Streamlit dashboard (after P1-T7)
 28. P2-T12 — Orchestrator + RedTeamLead narration (after P1-T14, P1-T15)
-29. P3-T1 — Vulnerability reports (after P2-T9 + runtime)
-30. P3-T2 — Cost analysis (after P1-T7 + runtime)
-31. P3-T3 — Upload CI runs.sqlite as a GitHub release artifact (after P2-T11 + Phase-2 runtime)
-32. P3-T4 — Demo video, local dashboard recorded (after P3-T1, P2-T11)
-33. P3-T5 — Social post (after P3-T4)
-34. P3-T6 — README final updates (after P3-T3, P3-T4, P3-T5)
+29. P2.5-T1 — Per-attempt drill-down page (after P2-T11)
+30. P2.5-T2 — LLM I/O payload trace flag (after P1-T5)
+31. P2.5-T3 — Live auto-refresh dashboard view (after P2-T11)
+32. P2.5-T4 — Inter-agent timeline detail (after P2-T11; richer once P2-T12 lands)
+33. P2.5-T5 — Rationale search in dashboard sidebar (after P2-T11)
+34. P2.5-T6 — Run log auto-capture (after P1-T11)
+35. P3-T1 — Vulnerability reports (after P2-T9 + runtime)
+36. P3-T2 — Cost analysis (after P1-T7 + runtime)
+37. P3-T3 — Upload CI runs.sqlite as a GitHub release artifact (after P2-T11 + Phase-2 runtime)
+38. P3-T4 — Demo video, local dashboard recorded (after P3-T1, P2-T11; benefits from P2.5-T1 + P2.5-T3)
+39. P3-T5 — Social post (after P3-T4)
+40. P3-T6 — README final updates (after P3-T3, P3-T4, P3-T5)
 
 ---
 
