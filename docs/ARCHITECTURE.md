@@ -6,37 +6,31 @@
 
 ---
 
-## Target Deployment
-
-The adversarial platform exercises a single live deployment. Targets are not configurable at runtime; the URL is hardcoded in `config.py` and overridable only via an explicit CLI flag (see § Human Approval Gates).
-
-| Setting | Value |
-|---------|-------|
-| **Co-Pilot base URL** | `https://openemr.136-118-242-198.sslip.io` |
-| **Login endpoint** | `https://openemr.136-118-242-198.sslip.io/interface/login/login.php?site=default` |
-| **Co-Pilot API endpoint** | `https://openemr.136-118-242-198.sslip.io/interface/modules/custom_modules/oe-module-clinical-copilot/public/index.php?site=default` |
-| **Site identifier** | `default` |
-| **Auth model** | Dedicated ChartBreaker test user (NOT admin), provisioned with `patients:demo` ACL and access to a fixed set of fixture patients. Credentials live in `config.py` via env vars `CHARTBREAKER_TARGET_USER` + `CHARTBREAKER_TARGET_PASSWORD`. |
-| **Session establishment** | `POST /interface/login/login.php?site=default` with form-encoded `authUser` + `clearPass` + `authProvider`; captures session cookie + initial CSRF token from the response |
-| **CSRF discipline** | Every Co-Pilot POST carries `csrf_token` in body **and** mirrors it as `X-CSRF-Token` header per `CopilotController.php:259` |
-| **Fixture patients** | Per-run pid list pinned in `config.py`; the dedicated test user has explicit ACL access to each. Cross-tenant pids used in Category 2f (authz bypass) attacks belong to a *different* test user — they are not the ChartBreaker user's patients. |
-
-**Why a dedicated test user, not admin:**
-- Vulnerability reports must reproduce under a *realistic* clinical user, not under credentials that bypass ACL by construction.
-- The Cracker specialist's Category 2f (authz bypass) and 6c (privilege escalation) probes require a *non-privileged* baseline against which to escalate.
-- Admin sessions skip several authorization checks that the Co-Pilot's PHP layer relies on; testing under admin would silently mask findings.
-
----
-
 ## Executive Summary
 
-ChartBreaker is a multi-agent adversarial evaluation platform that continuously probes the OpenEMR Clinical Co-Pilot for vulnerabilities, validates whether confirmed exploits are reproducible, and converts them into a regression suite that runs on every deploy. It is built as a multi-agent system because the work decomposes naturally along trust boundaries: an agent that *generates* attacks has a conflict of interest with one that *evaluates* them, an agent that *prioritizes* coverage has different inputs than one that *documents* findings, and the *kinds* of attacks differ enough (prompt-craft vs protocol fuzzing vs cost amplification) that one attack generator cannot do all of them well. Collapsing those roles into a single agent — or a deterministic pipeline — produces a tester that flatters its own attacks and cannot adapt as the target changes. ChartBreaker instead separates them into four primary agents (`Orchestrator`, `RedTeamLead`, `Judge`, `Scribe`) plus a team of attack specialists routed by the RedTeamLead, each backed by a different LLM team or, where appropriate, by deterministic Python tooling. The seven-plus components communicate via a shared LangGraph state store and a SQLite-backed observability layer.
+ChartBreaker is a multi-agent adversarial evaluation platform that continuously probes the OpenEMR Clinical Co-Pilot for vulnerabilities, validates whether confirmed exploits are reproducible, and converts them into a regression suite that runs on every deploy. It is built as a multi-agent system because the work decomposes naturally along trust boundaries: an agent that *generates* attacks has a conflict of interest with one that *evaluates* them, an agent that *prioritizes* coverage has different inputs than one that *documents* findings, and the *kinds* of attacks differ enough (prompt-craft vs protocol fuzzing vs cost amplification) that one attack generator cannot do all of them well. 
 
-The control loop is driven by the **Orchestrator** (`orchestrator_agent.py`, OpenAI `gpt-5.4-nano` by default for narrative + deterministic Python for priority math; every LLM-driven role reads its `{provider, model}` from a central registry — see § Model Configuration — so swapping any role is a one-row config edit). On each tick, it reads the observability store — coverage per subcategory, recent verdicts, open Scribe reports, accumulated session cost — and emits a campaign brief: which threat-model subcategory to attack next, which seed case to start from, and how aggressively to mutate. The brief is passed to the **RedTeamLead** (`red_team_lead.py`), a router that dispatches to exactly one specialist based on the subcategory: LLM specialists (Injector, Conversationalist, Smuggler, Impersonator) handle prompt-craft work using lightly-aligned open-weights models dispatched via OpenRouter (current default `nousresearch/hermes-3-llama-3.1-70b` at $0.30/M tokens with a 131k context window) because commercially-aligned frontier APIs refuse offensive workflows inconsistently and destroy reproducibility. (An earlier default of `cognitivecomputations/dolphin-mistral-24b-venice-edition:free` was abandoned because the free-tier shared rate limit made sustained runs unusable; Hermes 3 was selected as the paid replacement after a live shake-out across all four LLM specialists confirmed it produces clean JSON on every parse path.) OpenRouter is a request router, not a model provider — the underlying weights are open, and the specialists can be repointed to a local Ollama deployment via the model registry without code changes when self-hosted inference is preferred. Deterministic specialists (Saboteur for tool-misuse and parameter tampering, Cracker for authorization bypass / CSRF / session-fixation / login brute-force / privilege escalation / trust-boundary violations, Glutton for DoS and cost amplification) handle protocol- and fuzzing-shaped work where the case study explicitly notes traditional security tooling outperforms LLMs. The chosen specialist produces an `AttackAttempt`, which the RedTeamLead forwards to the **Target Client** (`target_client.py`), a thin HTTP wrapper around the deployed Co-Pilot's `briefing` and `followup` endpoints. The Target Client enforces session/CSRF discipline, captures the full response envelope (raw model output, post-verifier output, timing, token usage, audit log ID), and writes a trace row to the observability store.
+Collapsing those roles into a single agent — or a deterministic pipeline — produces a tester that flatters its own attacks and cannot adapt as the target changes. ChartBreaker instead separates them into four primary agents (`Orchestrator`, `RedTeamLead`, `Judge`, `Scribe`) plus a team of attack specialists routed by the RedTeamLead, each backed by a different LLM team or, where appropriate, by deterministic Python tooling. The seven-plus components communicate via a shared LangGraph state store and a SQLite-backed observability layer.
 
-The response is then routed to the **Judge** (`judge_agent.py`, OpenAI `gpt-5.4-nano` by default + deterministic verifier replay; the Judge model is the most likely role to be escalated to a stronger OpenAI model when calibration drift warrants it, swappable via the model registry). The Judge issues a verdict in two parts: (a) a *verifier-replay verdict* — does the raw model output survive `SourceAttributionVerifier` and `DomainConstraintVerifier` re-run in our own code, and is what remains still safe? — and (b) a *semantic verdict* — did the model actually violate the DATA-ONLY rule, regardless of post-scrub output? Disagreement between the two is itself a finding worth surfacing. Verdicts fan out to two consumers. The **Regression Harness** (`regression.py`) freezes every `success` verdict into a pinned test case (prompt + context fixture + model version + verdict snapshot) in `evals/regression_cases.yaml`, and runs the full suite whenever the Orchestrator triggers a regression sweep. The **Scribe** (`documentation_agent.py`, OpenAI `gpt-5.4-nano` by default — swappable for a stronger OpenAI model when Final-quality prose is required) takes the same verdict and drafts a vulnerability report in `reports/AF-NNN-*.md`, but does *not* auto-file or auto-submit it — critical/high severity drafts require human review before they leave the repo. That human gate is the deliberate trust boundary in an otherwise autonomous loop.
+The control loop is driven by the **Orchestrator** (`orchestrator_agent.py`, OpenAI `gpt-5.4-nano` by default for narrative + deterministic Python for priority math; every LLM-driven role reads its `{provider, model}` from a central registry — see § Model Configuration — so swapping any role is a one-row config edit). On each tick, it reads the observability store — coverage per subcategory, recent verdicts, open Scribe reports, accumulated session cost — and emits a campaign brief: which threat-model subcategory to attack next, which seed case to start from, and how aggressively to mutate. 
+The brief is passed to the **RedTeamLead** (`red_team_lead.py`), a router that dispatches to exactly one specialist based on the subcategory: LLM specialists (Injector, Conversationalist, Smuggler, Impersonator) handle prompt-craft work using lightly-aligned open-weights models dispatched via OpenRouter (current default `nousresearch/hermes-3-llama-3.1-70b` at $0.30/M tokens with a 131k context window) because commercially-aligned frontier APIs refuse offensive workflows inconsistently and destroy reproducibility. 
 
-Everything observable — every prompt, every verdict, every cost dollar, every agent handoff — is written to `observability/runs.sqlite` and a streaming `traces.jsonl`. This is not afterthought logging; it is the substrate the Orchestrator reads on its next tick. Without it, the Orchestrator is blind and the platform devolves into random fuzzing. Cost is tracked per-agent, per-run, and per-campaign so that the Orchestrator can halt or de-prioritize when budget burns without signal. The platform's hard architectural commitment is that *every* autonomous decision is replayable from the trace store — a CISO must be able to ask "why did the platform attack this surface yesterday?" and get a deterministic answer.
+OpenRouter is a request router, not a model provider — the underlying weights are open, and the specialists can be repointed to a local Ollama deployment via the model registry without code changes when self-hosted inference is preferred. 
+Deterministic specialists (Saboteur for tool-misuse and parameter tampering, Cracker for authorization bypass / CSRF / session-fixation / login brute-force / privilege escalation / trust-boundary violations, Glutton for DoS and cost amplification) handle protocol- and fuzzing-shaped work where the case study explicitly notes traditional security tooling outperforms LLMs. 
+
+The chosen specialist produces an `AttackAttempt`, which the RedTeamLead forwards to the **Target Client** (`target_client.py`), a thin HTTP wrapper around the deployed Co-Pilot's `briefing` and `followup` endpoints. The Target Client enforces session/CSRF discipline, captures the full response envelope (raw model output, post-verifier output, timing, token usage, audit log ID), and writes a trace row to the observability store.
+
+The response is then routed to the **Judge** (`judge_agent.py`, OpenAI `gpt-5.4-nano` by default + deterministic verifier replay; the Judge model is the most likely role to be escalated to a stronger OpenAI model when calibration drift warrants it, swappable via the model registry). 
+
+The Judge issues a verdict in two parts: 
+(a) a *verifier-replay verdict* — does the raw model output survive `SourceAttributionVerifier` and `DomainConstraintVerifier` re-run in our own code, and is what remains still safe? — and 
+(b) a *semantic verdict* — did the model actually violate the DATA-ONLY rule, regardless of post-scrub output? Disagreement between the two is itself a finding worth surfacing. Verdicts fan out to two consumers. 
+
+The **Regression Harness** (`regression.py`) freezes every `success` verdict into a pinned test case (prompt + context fixture + model version + verdict snapshot) in `evals/regression_cases.yaml`, and runs the full suite whenever the Orchestrator triggers a regression sweep. 
+
+The **Scribe** (`documentation_agent.py`, OpenAI `gpt-5.4-nano` by default — swappable for a stronger OpenAI model when Final-quality prose is required) takes the same verdict and drafts a vulnerability report in `reports/AF-NNN-*.md`, but does *not* auto-file or auto-submit it — critical/high severity drafts require human review before they leave the repo. That human gate is the deliberate trust boundary in an otherwise autonomous loop.
+
+Everything observable — every prompt, every verdict, every cost dollar, every agent handoff — is written to `observability/runs.sqlite` and a streaming `traces.jsonl`. This is not afterthought logging; it is the substrate the Orchestrator reads on its next tick. Without it, the Orchestrator is blind and the platform devolves into random fuzzing. Cost is tracked per-agent, per-run, and per-campaign so that the Orchestrator can halt or de-prioritize when budget burns without signal. The platform's hard architectural commitment is that *every* autonomous decision is replayable from the trace store — a CISO must be able to ask "why did the platform attack this surface yesterday?" and get a deterministic answer. A Streamlit dashboard (`dashboard/`) reads directly from `runs.sqlite` and renders the live state — coverage by subcategory, recent verdicts, Judge agreement/disagreement, per-campaign cost burn, and Scribe report drafts — so a reviewer can ask "what is the platform doing right now, and what has it found?" without touching the database.
 
 ---
 
@@ -128,6 +122,28 @@ Everything observable — every prompt, every verdict, every cost dollar, every 
 ```
 
 The loop closes via the observability store: Orchestrator writes the campaign brief there, Judge writes verdicts there, Regression Harness writes regression run results there, and Orchestrator reads all of it on its next tick. No agent calls another directly — they coordinate through the shared store. The high-level diagram above is intentionally compact; the **Judge + Verifier internals** are shown in §4, and the **Observability internals** (all eight SQLite tables, the JSONL/log mirrors, the dashboard layers) in the Observability Layer section.
+
+---
+
+## Target Deployment
+
+The adversarial platform exercises a single live deployment. Targets are not configurable at runtime; the URL is hardcoded in `config.py` and overridable only via an explicit CLI flag (see § Human Approval Gates).
+
+| Setting | Value |
+|---------|-------|
+| **Co-Pilot base URL** | `https://openemr.136-118-242-198.sslip.io` |
+| **Login endpoint** | `https://openemr.136-118-242-198.sslip.io/interface/login/login.php?site=default` |
+| **Co-Pilot API endpoint** | `https://openemr.136-118-242-198.sslip.io/interface/modules/custom_modules/oe-module-clinical-copilot/public/index.php?site=default` |
+| **Site identifier** | `default` |
+| **Auth model** | Dedicated ChartBreaker test user (NOT admin), provisioned with `patients:demo` ACL and access to a fixed set of fixture patients. Credentials live in `config.py` via env vars `CHARTBREAKER_TARGET_USER` + `CHARTBREAKER_TARGET_PASSWORD`. |
+| **Session establishment** | `POST /interface/login/login.php?site=default` with form-encoded `authUser` + `clearPass` + `authProvider`; captures session cookie + initial CSRF token from the response |
+| **CSRF discipline** | Every Co-Pilot POST carries `csrf_token` in body **and** mirrors it as `X-CSRF-Token` header per `CopilotController.php:259` |
+| **Fixture patients** | Per-run pid list pinned in `config.py`; the dedicated test user has explicit ACL access to each. Cross-tenant pids used in Category 2f (authz bypass) attacks belong to a *different* test user — they are not the ChartBreaker user's patients. |
+
+**Why a dedicated test user, not admin:**
+- Vulnerability reports must reproduce under a *realistic* clinical user, not under credentials that bypass ACL by construction.
+- The Cracker specialist's Category 2f (authz bypass) and 6c (privilege escalation) probes require a *non-privileged* baseline against which to escalate.
+- Admin sessions skip several authorization checks that the Co-Pilot's PHP layer relies on; testing under admin would silently mask findings.
 
 ---
 

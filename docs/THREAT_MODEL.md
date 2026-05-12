@@ -9,19 +9,37 @@
 
 ## Executive Summary
 
-The Clinical Co-Pilot is a read-only, chart-scoped assistant embedded in OpenEMR. It receives a single patient's chart as a deterministic `PATIENT_CONTEXT` JSON packet plus a user question, and returns a structured JSON response that downstream verifiers strip and validate before rendering. By the standards of LLM-in-healthcare products, the defenses are unusually deliberate: an explicit `DATA-ONLY` rule in the system prompt, a `SourceAttributionVerifier` that drops claims with no cited source ID, a `DomainConstraintVerifier` that rejects diagnoses/treatments/other-patient references, PHI-safe audit logging that excludes prompt and response bodies, per-patient conversation history that clears on patient switch, and a 30 req/min session-scoped rate limit. There is no function calling in V1; tool surface arrives with the Phase-15 supervisor-graph + RAG path that is staged but not yet live in production.
+The Clinical Co-Pilot is a read-only, chart-scoped assistant embedded in OpenEMR. It receives a single patient's chart as a deterministic `PATIENT_CONTEXT` JSON packet plus a user question, and returns a structured JSON response that downstream verifiers strip and validate before rendering. 
+By the standards of LLM-in-healthcare products, the defenses are unusually deliberate: an explicit `DATA-ONLY` rule in the system prompt, a `SourceAttributionVerifier` that drops claims with no cited source ID, a `DomainConstraintVerifier` that rejects diagnoses/treatments/other-patient references, PHI-safe audit logging that excludes prompt and response bodies, per-patient conversation history that clears on patient switch, and a 30 req/min session-scoped rate limit. 
 
-**The defining property of this target is that every defense is *soft*.** The `DATA-ONLY` rule is one paragraph of natural language in a system prompt. The verifiers are regex-and-schema checks over the model's structured output. The conversation isolation is session-scoped, not cryptographically bound to a patient ID. The rate limiter is session-keyed and resettable. The HTTP layer in front of the Co-Pilot is OpenEMR's stock session cookie + `csrf_token` (carried in both POST body and `X-CSRF-Token` header per `CopilotController.php:259`) plus OpenEMR's stock login form — both standard, both attackable via the usual session-fixation, token-replay, and brute-force surfaces. None of these are bad choices — they are appropriate for V1 — but they collectively define the seam an adversarial platform must exercise. The job of ChartBreaker is not to demonstrate that the soft defenses can be bypassed in principle (they can); the job is to identify *which specific bypasses* are reachable in this deployment, *how reliably* they reproduce, and *whether fixes hold* under mutation.
+**The defining property of this target is that every defense is *soft*.** 
+The `DATA-ONLY` rule is one paragraph of natural language in a system prompt. The verifiers are regex-and-schema checks over the model's structured output. The conversation isolation is session-scoped, not cryptographically bound to a patient ID. The rate limiter is session-keyed and resettable. The HTTP layer in front of the Co-Pilot is OpenEMR's stock session cookie + `csrf_token` (carried in both POST body and `X-CSRF-Token` header per `CopilotController.php:259`) plus OpenEMR's stock login form — both standard, both attackable via the usual session-fixation, token-replay, and brute-force surfaces. None of these are bad choices — they are appropriate for V1 — but they collectively define the seam an adversarial platform must exercise. The job of ChartBreaker is not to demonstrate that the soft defenses can be bypassed in principle (they can); the job is to identify *which specific bypasses* are reachable in this deployment, *how reliably* they reproduce, and *whether fixes hold* under mutation.
 
-**Highest-risk attack categories**, in priority order for MVP coverage:
+**Highest-risk attack categories**, in priority order coverage:
 
-1. **Indirect prompt injection via chart text (Category 1b).** SOAP notes, pnotes, allergy descriptions, and vision-extracted PDF text are all rendered into `PATIENT_CONTEXT` as untrusted free-text fields. A successful injection here means the model overrides the `DATA-ONLY` rule on data the attacker controls — the highest-leverage exploit class for this product.
-2. **PHI exfiltration via verifier bypass (Category 2a, 2b).** The `SourceAttributionVerifier` and `DomainConstraintVerifier` are the last line of defense. Forging source IDs (`medication:42` with no underlying record) or smuggling clinical recommendations as implication-phrased prose ("patients in this state typically receive…") would defeat them without tripping the schema.
-3. **Cost amplification and rate-limit bypass (Category 5).** 6,000-token responses × 10-turn history replay × parallel sessions × vision extraction at 16,000 tokens makes per-incident cost an attack surface, not just a budget concern.
+1. **Indirect prompt injection via chart text (Category 1b).** 
+SOAP notes, pnotes, allergy descriptions, and vision-extracted PDF text are all rendered into `PATIENT_CONTEXT` as untrusted free-text fields. A successful injection here means the model overrides the `DATA-ONLY` rule on data the attacker controls — the highest-leverage exploit class for this product.
 
-**Lower-priority but real** for the final platform: cross-patient context leakage via conversation history boundary (Category 2c, 3a), CSRF token replay/forgery against the Co-Pilot endpoint (6a), session fixation / cookie theft against the OpenEMR login flow (6d), BAA-gate misconfiguration where an admin flips `copilot_baa_acknowledged` without a real BAA (3c), and persona-hijacking attempts to coerce the model into a non-co-pilot role (6b).
+2. **PHI exfiltration via verifier bypass (Category 2a, 2b).** 
+The `SourceAttributionVerifier` and `DomainConstraintVerifier` are the last line of defense. Forging source IDs (`medication:42` with no underlying record) or smuggling clinical recommendations as implication-phrased prose ("patients in this state typically receive…") would defeat them without tripping the schema.
 
-**How ChartBreaker prioritizes coverage.** The Orchestrator agent reads three signals from the observability layer to choose the next campaign: (a) *coverage gaps* — subcategories with fewer than N attempts, (b) *near-misses* — partially-successful attacks the Red Team team should mutate, and (c) *regression risk* — categories where a recent fix shipped, requiring re-verification. The Judge agent splits its verdict into deterministic verifier-replay (does the response pass `SourceAttributionVerifier` + `DomainConstraintVerifier`?) and an LLM-judged semantic check (did the model actually violate the DATA-ONLY rule even if the response was scrubbed?). Every confirmed exploit is frozen into a regression case with prompt, context, model version, and judge verdict pinned, so a future code change either continues to fail it (vulnerability persists), passes it (fix confirmed), or causes a *different* category to regress (the regression harness flags the trade-off).
+3. **Cost amplification and rate-limit bypass (Category 5).** 
+6,000-token responses × 10-turn history replay × parallel sessions × vision extraction at 16,000 tokens makes per-incident cost an attack surface, not just a budget concern.
+
+
+**Lower-priority but real** 
+for the final platform: cross-patient context leakage via conversation history boundary (Category 2c, 3a), 
+CSRF token replay/forgery against the Co-Pilot endpoint (6a), 
+session fixation / cookie theft against the OpenEMR login flow (6d),
+ BAA-gate misconfiguration where an admin flips `copilot_baa_acknowledged` without a real BAA (3c), and 
+ persona-hijacking attempts to coerce the model into a non-co-pilot role (6b).
+
+**How ChartBreaker prioritizes coverage.** 
+The Orchestrator agent reads three signals from the observability layer to choose the next campaign: 
+(a) *coverage gaps* — subcategories with fewer than N attempts, 
+(b) *near-misses* — partially-successful attacks the Red Team team should mutate, and 
+(c) *regression risk* — categories where a recent fix shipped, requiring re-verification. 
+The Judge agent splits its verdict into deterministic verifier-replay (does the response pass `SourceAttributionVerifier` + `DomainConstraintVerifier`?) and an LLM-judged semantic check (did the model actually violate the DATA-ONLY rule even if the response was scrubbed?). Every confirmed exploit is frozen into a regression case with prompt, context, model version, and judge verdict pinned, so a future code change either continues to fail it (vulnerability persists), passes it (fix confirmed), or causes a *different* category to regress (the regression harness flags the trade-off).
 
 ---
 
