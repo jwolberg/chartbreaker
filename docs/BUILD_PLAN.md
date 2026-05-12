@@ -40,9 +40,9 @@
 ## Current Status
 - **Overall status:** Phase 1 — MVP Floor **complete** (15 of 16 tickets done, P1-T15 LangGraph deferred to Phase 2 with rationale). MVP rubric hard gate met with live evidence across 6 attack categories. Phase 2 in progress (rubric-critical subset T8 → T7 → T1 → T2 → T4 → T5 → T11).
 - **Current phase:** Phase 2 — MVP-to-Final
-- **Current ticket:** P2-T4 (Saboteur full Cat 4)
+- **Current ticket:** P2-T5 (Cracker full Cat 6)
 - **Blockers:** None
-- **Last updated:** 2026-05-11 after P2-T2 completion
+- **Last updated:** 2026-05-11 after P2-T4 completion
 
 ---
 
@@ -213,10 +213,10 @@ Layer in the components `ARCHITECTURE.md` § MVP vs Final Cut marks as Final-onl
 
 - **P2-T4 — Saboteur full Cat 4 (4a vision-pipeline, 4b routing-keyword, 4d placeholder)**
   - Objective: Extend Saboteur beyond Cat 4c param-tampering: vision-pipeline upload probes against `run-extraction.php`, routing-keyword bait for the supervisor-graph (Phase-15 staged), and the Phase-15 recursive-tool-call placeholder probe that asserts the function-call surface is absent in V1.
-  - Files likely involved: `chartbreaker/agents/specialists/tool_misuse_specialist.py`, `chartbreaker/target_client.py` (vision endpoint)
+  - Files likely involved: `chartbreaker/agents/specialists/tool_misuse_specialist.py`, `chartbreaker/agents/red_team_lead.py`, `chartbreaker/agents/orchestrator_agent.py`
   - Depends on: P1-T13, P2-T8 (target client vision endpoint)
   - Acceptance criteria covered: `ARCHITECTURE.md` § Saboteur (full coverage); `THREAT_MODEL.md` § Category 4 (4a, 4b, 4d)
-  - Status: Todo
+  - Status: Complete — 4a posts a multipart 1×1 PNG with a traversal-shaped filename to `/run-extraction.php`; 4b stuffs USER_QUESTION with `ROUTE:` / `TOOL:` / `SUPERVISOR:` tokens to probe Phase-15 leakage into V1; 4d sends an OpenAI-style function_call shaped string. RedTeamLead + Orchestrator wired; existing 4c probe unchanged.
 
 - **P2-T5 — Cracker full Cat 6 (6c BAA-gate + priv esc, 6d session fixation, 6e login brute-force)**
   - Objective: Extend Cracker beyond 2f + 6a: BAA-gate flip probe, session-fixation probe (pre-seed `PHPSESSID` before login + cookie-flag audit), login brute-force / lockout-bypass probes against `POST /interface/login/login.php`. Cracker-layer rate cap enforced to avoid locking out the test user.

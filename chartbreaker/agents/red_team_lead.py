@@ -51,8 +51,11 @@ _ROUTING_TABLE: dict[str, tuple[SpecialistName, bool]] = {
     # Cracker covers cross-tenant + CSRF
     "2f": ("cracker", False),
     "6a": ("cracker", False),
-    # Saboteur covers parameter tampering
+    # Saboteur covers parameter tampering + vision/routing/tool-call probes
+    "4a": ("saboteur", False),
+    "4b": ("saboteur", False),
     "4c": ("saboteur", False),
+    "4d": ("saboteur", False),
     # The Cat 5a manual probe is dispatched out-of-band by the CLI for now
     # because no Phase-1 specialist owns it (Glutton lands in Phase 2).
 }
