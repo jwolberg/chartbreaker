@@ -23,6 +23,7 @@ from typing import Any
 import httpx
 
 from chartbreaker.config import (
+    FIXTURE_PIDS,
     TARGET_BASE_URL,
     TARGET_SITE,
     get_target_credentials,
@@ -38,6 +39,14 @@ _COPILOT_PATH = (
 )
 _LOGIN_PATH = f"/interface/login/login.php?site={TARGET_SITE}"
 
+# Patient chart page that triggers the Co-Pilot module's Bootstrap render
+# (RenderEvent::EVENT_SECTION_LIST_RENDER_AFTER fires here). The bootstrap
+# emits the CSRF token into a `data-csrf-token` attribute on the mount div.
+# The {pid} placeholder is filled at request time.
+_CSRF_BOOTSTRAP_PATH_TEMPLATE = (
+    "/interface/patient_file/summary/demographics.php?set_pid={pid}&site=" + TARGET_SITE
+)
+
 
 class TargetUnreachableError(RuntimeError):
     """Network failure, auth failure, or persistent 5xx from the target."""
@@ -52,9 +61,13 @@ def _extract_csrf_token(text: str) -> str | None:
 
     OpenEMR's stock pages put the token in a meta tag, a hidden form
     field, or — for module endpoints — return it in a JSON field.
+    The Clinical Co-Pilot bootstrap emits it on a `data-csrf-token`
+    attribute on the mount div (see oe-module-clinical-copilot/src/
+    Bootstrap.php line 121).
     Returns None if no known pattern matches.
     """
     patterns = (
+        r'data-csrf-token=["\']([^"\']+)["\']',
         r'name=["\']csrf_token["\']\s+content=["\']([^"\']+)["\']',
         r'name=["\']csrf_token["\']\s+value=["\']([^"\']+)["\']',
         r'"csrf_token"\s*:\s*"([^"]+)"',
@@ -136,11 +149,42 @@ class TargetClient:
 
         self._authenticated = True
         self._csrf_token = _extract_csrf_token(response.text)
+
+        # The login response itself doesn't carry a CSRF token in OpenEMR;
+        # the token is generated per-session and rendered into chart pages.
+        # Fetch a patient chart page that triggers the Co-Pilot module's
+        # Bootstrap render so we can extract the data-csrf-token attribute.
+        if self._csrf_token is None:
+            await self._fetch_csrf_from_chart_page()
+
         if self._csrf_token is None:
             logger.warning(
-                "CSRF token not found in login response; first Co-Pilot POST may "
-                "need to fetch it from a follow-up endpoint."
+                "CSRF token not found after login + chart-page fetch; "
+                "Co-Pilot POSTs will likely 403."
             )
+
+    async def _fetch_csrf_from_chart_page(self) -> None:
+        """GET a patient chart page to receive the Co-Pilot bootstrap CSRF token."""
+        assert self._client is not None
+        if not FIXTURE_PIDS:
+            return
+        path = _CSRF_BOOTSTRAP_PATH_TEMPLATE.format(pid=FIXTURE_PIDS[0])
+        try:
+            response = await self._client.get(path)
+        except httpx.RequestError as exc:
+            logger.warning("CSRF bootstrap fetch failed: %s", exc)
+            return
+        if response.status_code >= 400:
+            logger.warning(
+                "CSRF bootstrap fetch returned %s; first 200 chars: %s",
+                response.status_code,
+                response.text[:200],
+            )
+            return
+        token = _extract_csrf_token(response.text)
+        if token is not None:
+            logger.info("CSRF token captured from chart-page bootstrap")
+            self._csrf_token = token
 
     async def dispatch(self, attempt: AttackAttempt) -> TargetResponse:
         """Send one AttackAttempt to the target and capture the response."""
