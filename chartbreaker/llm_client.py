@@ -9,12 +9,24 @@ dashboard can attribute cost per agent.
 Retry policy: 3 attempts with exponential backoff on transient HTTP
 errors (429 / 5xx) and network errors. Non-retriable HTTP errors raise
 immediately.
+
+Payload tracing (P2.5-T2): when `enable_payload_trace(path)` has been
+called for the current process (typically by `chartbreaker run-mvp-loop
+--trace-llm-io`), every `chat()` call appends one JSON line containing
+the full request messages + response content + token counts to that
+file. Off by default — long runs would otherwise write megabytes of
+prompt text to disk. See docs/OBSERVABILITY.md § Gap #3.
 """
 
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
+import threading
+import time
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Literal, TypedDict
 
 import httpx
@@ -27,6 +39,46 @@ from chartbreaker.config import (
 from chartbreaker.state import CostObservation
 
 logger = logging.getLogger(__name__)
+
+
+# ----------------------------------------------------------------------
+# Payload trace (P2.5-T2) — opt-in I/O capture for forensic debugging.
+# ----------------------------------------------------------------------
+
+_payload_trace_path: Path | None = None
+_payload_trace_lock = threading.Lock()
+
+
+def enable_payload_trace(path: str | Path) -> None:
+    """Turn on full request/response capture for every chat() call.
+
+    Idempotent. The path is created on first append. Each line is one
+    JSON object: {ts, role, provider, model, temperature, max_tokens,
+    request_messages, response_content, prompt_tokens, completion_tokens,
+    usd, latency_ms}. Designed to be greppable / jq-friendly.
+    """
+    global _payload_trace_path
+    _payload_trace_path = Path(path)
+
+
+def disable_payload_trace() -> None:
+    """Reset the payload-trace destination. Used by tests."""
+    global _payload_trace_path
+    _payload_trace_path = None
+
+
+def _maybe_write_trace(record: dict) -> None:
+    """Append one record to the active trace file, if any. Best-effort."""
+    if _payload_trace_path is None:
+        return
+    try:
+        _payload_trace_path.parent.mkdir(parents=True, exist_ok=True)
+        with _payload_trace_lock:
+            with _payload_trace_path.open("a", encoding="utf-8") as f:
+                f.write(json.dumps(record, default=str, separators=(",", ":")))
+                f.write("\n")
+    except OSError as exc:
+        logger.warning("could not write LLM payload trace: %s", exc)
 
 
 class ChatMessage(TypedDict):
@@ -156,12 +208,17 @@ async def chat(
 
     url = f"{provider_cfg.base_url}/chat/completions"
 
+    start = time.perf_counter()
     body = await _post_with_retry(url, headers, payload, timeout_s)
+    latency_ms = int((time.perf_counter() - start) * 1000)
 
     content = body["choices"][0]["message"]["content"]
     usage = body.get("usage", {})
     prompt_tokens = int(usage.get("prompt_tokens", 0))
     completion_tokens = int(usage.get("completion_tokens", 0))
+    usd = _estimate_cost_usd(
+        role_cfg.provider, role_cfg.model, prompt_tokens, completion_tokens
+    )
 
     cost = CostObservation(
         campaign_id=campaign_id,
@@ -171,7 +228,27 @@ async def chat(
         model=role_cfg.model,
         prompt_tokens=prompt_tokens,
         completion_tokens=completion_tokens,
-        usd=_estimate_cost_usd(role_cfg.provider, role_cfg.model, prompt_tokens, completion_tokens),
+        usd=usd,
+    )
+
+    # P2.5-T2: opt-in full-payload trace for forensic investigation.
+    _maybe_write_trace(
+        {
+            "ts": datetime.now(tz=timezone.utc).isoformat(),
+            "role": role,
+            "provider": role_cfg.provider,
+            "model": role_cfg.model,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "campaign_id": campaign_id,
+            "attempt_id": attempt_id,
+            "request_messages": messages,
+            "response_content": content,
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens,
+            "usd": usd,
+            "latency_ms": latency_ms,
+        }
     )
 
     return content, cost

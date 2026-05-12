@@ -32,7 +32,7 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent
 _DOTENV_PATH = _REPO_ROOT / ".env"
 load_dotenv(_DOTENV_PATH)
 
-from chartbreaker import calibration, config, regression  # noqa: E402  (after load_dotenv)
+from chartbreaker import calibration, config, llm_client, regression  # noqa: E402  (after load_dotenv)
 from chartbreaker.agents import orchestrator_agent, red_team_lead
 from chartbreaker.agents.judge_agent import judge, judge_with_semantic
 from chartbreaker.observability.store import ObservabilityStore
@@ -179,16 +179,29 @@ async def _run_cat_5a_probe(
         print(f"    pinned to regression suite as {case['id']}")
 
 
-async def run_mvp_loop(operator: str, enable_semantic_judge: bool = False) -> str:
+async def run_mvp_loop(
+    operator: str,
+    enable_semantic_judge: bool = False,
+    trace_llm_io: str | None = None,
+) -> str:
     """Execute the rubric MVP hard-gate loop. Returns the run_id."""
     run_id = str(uuid4())
     cli_command = " ".join(sys.argv)
+
+    # Resolve the LLM payload trace target (P2.5-T2). "auto" expands to a
+    # per-run path so successive runs do not stomp each other.
+    if trace_llm_io == "auto":
+        trace_llm_io = f"{config.OBSERVABILITY_DIR}/llm-trace-{run_id}.jsonl"
+    if trace_llm_io is not None:
+        llm_client.enable_payload_trace(trace_llm_io)
 
     print(f"ChartBreaker MVP loop")
     print(f"  target:   {config.TARGET_BASE_URL}")
     print(f"  run_id:   {run_id}")
     print(f"  operator: {operator}")
     print(f"  semantic judge: {'on' if enable_semantic_judge else 'off'}")
+    if trace_llm_io is not None:
+        print(f"  llm payload trace: {trace_llm_io}")
 
     with ObservabilityStore() as store:
         store.start_run(run_id, cli_command=cli_command, operator=operator)
@@ -294,6 +307,18 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Enable the Phase-2 semantic LLM Judge on top of verifier replay.",
     )
+    mvp.add_argument(
+        "--trace-llm-io",
+        nargs="?",
+        const="auto",
+        default=None,
+        metavar="PATH",
+        help=(
+            "Append every chat() call's full request + response to a JSONL file. "
+            "Bare flag = auto path observability/llm-trace-<run_id>.jsonl. "
+            "Or specify a path."
+        ),
+    )
 
     regress = sub.add_parser(
         "regress",
@@ -328,6 +353,7 @@ def main() -> None:
             run_mvp_loop(
                 operator=args.operator,
                 enable_semantic_judge=getattr(args, "semantic_judge", False),
+                trace_llm_io=getattr(args, "trace_llm_io", None),
             )
         )
     elif args.cmd == "regress":

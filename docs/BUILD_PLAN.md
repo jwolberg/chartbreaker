@@ -302,7 +302,7 @@ Close the five gaps documented in `docs/OBSERVABILITY.md`. The Phase-2 dashboard
   - Files likely involved: `chartbreaker/llm_client.py`, `chartbreaker/cli.py`
   - Depends on: P1-T5 (llm_client exists)
   - Acceptance criteria covered: closes `docs/OBSERVABILITY.md` Gap #3 (no LLM payload capture). Unblocks investigation of "what prompt did the Judge build?" and "what raw text did the Injector ask the dolphin-mixtral model to produce?"
-  - Status: Todo
+  - Status: Complete — `enable_payload_trace(path)` / `disable_payload_trace()` toggles a thread-safe JSONL writer wrapped around every `chat()` call. CLI flag `--trace-llm-io [PATH]` defaults to `observability/llm-trace-<run_id>.jsonl` when no path is supplied. Trace records include request_messages, response_content, token counts, latency_ms, role/provider/model, campaign_id, attempt_id. Write failures are swallowed so they don't break the run. 4 unit tests.
 
 - **P2.5-T3 — Live auto-refresh dashboard view**
   - Objective: Add a second Streamlit page "Live activity" that polls the most recent ~50 `agent_events` rows every 2 seconds and renders them as a chronological feed (agent, event_type, payload-preview). Uses `st.autorefresh` or equivalent. Bypasses the 10s aggregate-cache used by the main dashboard. Operator can leave this open in a side tab during a run.
