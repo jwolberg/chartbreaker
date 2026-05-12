@@ -103,12 +103,15 @@ MODEL_REGISTRY: dict[str, RoleConfig] = {
     "judge_semantic":  RoleConfig("judge_semantic",  "openai", "gpt-5.4-nano"),
     "scribe":          RoleConfig("scribe",          "openai", "gpt-5.4-nano"),
     # Offensive specialists — OpenRouter uncensored fine-tune.
+    # Default: cognitivecomputations/dolphin-mistral-24b-venice-edition:free
+    # (32k ctx, free tier). Documented alternative if calibration suffers:
+    # nousresearch/hermes-3-llama-3.1-70b ($0.30/M).
     # Commercially-aligned frontier models are disallowed here per
     # docs/ARCHITECTURE.md § Injector.
-    "injector":          RoleConfig("injector",          "openrouter", "cognitivecomputations/dolphin-mixtral-8x22b"),
-    "conversationalist": RoleConfig("conversationalist", "openrouter", "cognitivecomputations/dolphin-mixtral-8x22b"),
-    "smuggler":          RoleConfig("smuggler",          "openrouter", "cognitivecomputations/dolphin-mixtral-8x22b"),
-    "impersonator":      RoleConfig("impersonator",      "openrouter", "cognitivecomputations/dolphin-mixtral-8x22b"),
+    "injector":          RoleConfig("injector",          "openrouter", "cognitivecomputations/dolphin-mistral-24b-venice-edition:free"),
+    "conversationalist": RoleConfig("conversationalist", "openrouter", "cognitivecomputations/dolphin-mistral-24b-venice-edition:free"),
+    "smuggler":          RoleConfig("smuggler",          "openrouter", "cognitivecomputations/dolphin-mistral-24b-venice-edition:free"),
+    "impersonator":      RoleConfig("impersonator",      "openrouter", "cognitivecomputations/dolphin-mistral-24b-venice-edition:free"),
     # Deterministic specialists (Saboteur, Cracker, Glutton) have no model
     # and are absent from this registry by design.
 }

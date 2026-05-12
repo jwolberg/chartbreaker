@@ -42,10 +42,16 @@ _RETRY_STATUS_CODES: frozenset[int] = frozenset({429, 500, 502, 503, 504})
 # trusting cost telemetry. Missing entries default to $0 and log a warning.
 _PRICING_USD_PER_1M: dict[tuple[str, str], tuple[float, float]] = {
     ("openai", "gpt-5.4-nano"): (0.150, 0.600),
+    # Default offensive model — Dolphin Venice edition, free tier.
     (
         "openrouter",
-        "cognitivecomputations/dolphin-mixtral-8x22b",
-    ): (0.900, 0.900),
+        "cognitivecomputations/dolphin-mistral-24b-venice-edition:free",
+    ): (0.0, 0.0),
+    # Paid alternative — Nous Hermes 3 70B.
+    (
+        "openrouter",
+        "nousresearch/hermes-3-llama-3.1-70b",
+    ): (0.300, 0.300),
 }
 
 
@@ -94,7 +100,14 @@ async def _post_with_retry(
                         )
                         await asyncio.sleep(delay)
                         continue
-                response.raise_for_status()
+                if response.status_code >= 400:
+                    # Surface the provider's response body — OpenRouter / OpenAI
+                    # typically explain *why* in the body (e.g. "model not found").
+                    raise httpx.HTTPStatusError(
+                        f"HTTP {response.status_code} from {url}: {response.text[:500]}",
+                        request=response.request,
+                        response=response,
+                    )
                 return response.json()
             except httpx.RequestError as exc:
                 if attempt_idx + 1 == max_attempts:
