@@ -145,21 +145,21 @@ Every row in `PROJECT_STRATEGY.md` § Success Criteria § MVP is green:
   - Files likely involved: `chartbreaker/agents/specialists/protocol_specialist.py`
   - Depends on: P1-T6, P1-T9
   - Acceptance criteria covered: `ARCHITECTURE.md` § Cracker (deterministic specialist); `THREAT_MODEL.md` § Category 2 (2f), § Category 6 (6a); `ARCHITECTURE.md` § MVP vs Final Cut "Cracker" row
-  - Status: Complete (commit pending) — live verified: 2f → 404 patient_not_found, 6a → 403 csrf_failed
+  - Status: Complete (commit `c163cc2`) — live verified: 2f → 404 patient_not_found, 6a → 403 csrf_failed
 
 - **P1-T13 — `chartbreaker/agents/specialists/tool_misuse_specialist.py` (Saboteur for Cat 4c)**
   - Objective: Deterministic Python specialist for parameter tampering on the request envelope (Cat 4c) — `action` enum variants, malformed `pid`, unicode tricks, CSRF header vs body race, oversized payloads. Small, demo-able, completes the MVP three-specialist showcase.
   - Files likely involved: `chartbreaker/agents/specialists/tool_misuse_specialist.py`
   - Depends on: P1-T6, P1-T9
   - Acceptance criteria covered: `ARCHITECTURE.md` § Saboteur (deterministic specialist); `THREAT_MODEL.md` § Category 4 (4c); `ARCHITECTURE.md` § MVP vs Final Cut "Saboteur" row
-  - Status: Complete (commit pending) — live observation: 5000-char USER_QUESTION accepted with 200 (potential cap-enforcement finding for Phase 2 Judge to flag)
+  - Status: Complete (commit `c163cc2`) — live observation: 5000-char USER_QUESTION accepted with 200 (potential cap-enforcement finding for Phase 2 Judge to flag)
 
 - **P1-T14 — `chartbreaker/agents/red_team_lead.py` routing table + `chartbreaker/agents/orchestrator_agent.py` priority math**
   - Objective: Replace the straight-line MVP loop (P1-T11) with the proper Orchestrator → RedTeamLead → Specialist dispatch. RedTeamLead is a deterministic routing table keyed on `subcategory_id`. Orchestrator computes the priority score per `ARCHITECTURE.md` § Orchestration Strategy formula and emits `CampaignBrief`. No LLM narration yet (deferred to Phase 2 polish).
   - Files likely involved: `chartbreaker/agents/red_team_lead.py`, `chartbreaker/agents/orchestrator_agent.py`
   - Depends on: P1-T11, P1-T12, P1-T13
   - Acceptance criteria covered: `ARCHITECTURE.md` § Conductor — Orchestrator Agent; `ARCHITECTURE.md` § RedTeamLead — the router; `ARCHITECTURE.md` § Orchestration Strategy
-  - Status: Complete (commit pending) — live: severity-ordered briefs route through RedTeamLead to specialists; Cat 2f (critical) dispatched first per priority math
+  - Status: Complete (commit `1990945`) — live: severity-ordered briefs route through RedTeamLead to specialists; Cat 2f (critical) dispatched first per priority math
 
 - **P1-T15 — `chartbreaker/graph.py` LangGraph wiring + `chartbreaker/cli.py run` command**
   - Objective: Wire Orchestrator → RedTeamLead → Specialist → TargetClient → Judge as LangGraph nodes. CLI `chartbreaker run --campaign <subcategory_id>` triggers the graph. Checkpoint to `runs.sqlite` after every node transition.
@@ -173,7 +173,7 @@ Every row in `PROJECT_STRATEGY.md` § Success Criteria § MVP is green:
   - Files likely involved: `chartbreaker/regression.py`, `evals/regression_cases.yaml` (initially empty)
   - Depends on: P1-T9, P1-T15
   - Acceptance criteria covered: `ARCHITECTURE.md` § Vault — Regression Harness; `ARCHITECTURE.md` § MVP vs Final Cut "Regression Harness" row
-  - Status: Complete (commit pending) — pin/load/replay/classify implemented + `chartbreaker.cli regress` subcommand; auto-pin wired into MVP loop when verdict.recommended_action == 'regression'
+  - Status: Complete (commit `1990945`) — pin/load/replay/classify implemented + `chartbreaker.cli regress` subcommand; auto-pin wired into MVP loop when verdict.recommended_action == 'regression'
 
 ---
 
