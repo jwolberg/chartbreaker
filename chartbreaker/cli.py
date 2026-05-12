@@ -22,7 +22,13 @@ import logging
 import sys
 from uuid import uuid4
 
-from chartbreaker import config, evals_loader
+from dotenv import load_dotenv
+
+# Load .env before any module reads os.environ. Walks up from CWD looking for
+# the file so the CLI works whether you invoke it from repo root or elsewhere.
+load_dotenv()
+
+from chartbreaker import config, evals_loader  # noqa: E402  (after load_dotenv)
 from chartbreaker.agents.judge_agent import judge
 from chartbreaker.agents.specialists.injection_specialist import generate as injector_generate
 from chartbreaker.observability.store import ObservabilityStore
