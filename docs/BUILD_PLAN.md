@@ -138,21 +138,21 @@ Every row in `PROJECT_STRATEGY.md` § Success Criteria § MVP is green:
   - Files likely involved: `chartbreaker/cli.py` (minimal `chartbreaker run-mvp-loop` command)
   - Depends on: P1-T6, P1-T7, P1-T9, P1-T10
   - Acceptance criteria covered: `ASSIGNMENT.md` § Stage 3 Hard Gate ("≥3 distinct attack categories" + "≥1 agent role running live against the deployed target"); `PROJECT_STRATEGY.md` § Success Criteria § MVP rows 1, 2, 3
-  - Status: Complete (commit pending) — code shipped; live-run requires operator to set env vars and execute `python -m chartbreaker.cli run-mvp-loop`
+  - Status: Complete (commits `a37509f` code; `9d3bfd5` + `927db6c` debugging; live evidence captured in `observability/runs.sqlite`)
 
 - **P1-T12 — `chartbreaker/agents/specialists/protocol_specialist.py` (Cracker for Cat 2f + 6a)**
   - Objective: Deterministic Python specialist for `pid` swap (Cat 2f — authz bypass) and CSRF token replay (Cat 6a). Rate-capped login probe to avoid ChartBreaker test-user lockout. Demos the LLM-vs-deterministic split called out in `ARCHITECTURE.md` § AI vs Deterministic.
   - Files likely involved: `chartbreaker/agents/specialists/protocol_specialist.py`
   - Depends on: P1-T6, P1-T9
   - Acceptance criteria covered: `ARCHITECTURE.md` § Cracker (deterministic specialist); `THREAT_MODEL.md` § Category 2 (2f), § Category 6 (6a); `ARCHITECTURE.md` § MVP vs Final Cut "Cracker" row
-  - Status: Todo
+  - Status: Complete (commit pending) — live verified: 2f → 404 patient_not_found, 6a → 403 csrf_failed
 
 - **P1-T13 — `chartbreaker/agents/specialists/tool_misuse_specialist.py` (Saboteur for Cat 4c)**
   - Objective: Deterministic Python specialist for parameter tampering on the request envelope (Cat 4c) — `action` enum variants, malformed `pid`, unicode tricks, CSRF header vs body race, oversized payloads. Small, demo-able, completes the MVP three-specialist showcase.
   - Files likely involved: `chartbreaker/agents/specialists/tool_misuse_specialist.py`
   - Depends on: P1-T6, P1-T9
   - Acceptance criteria covered: `ARCHITECTURE.md` § Saboteur (deterministic specialist); `THREAT_MODEL.md` § Category 4 (4c); `ARCHITECTURE.md` § MVP vs Final Cut "Saboteur" row
-  - Status: Todo
+  - Status: Complete (commit pending) — live observation: 5000-char USER_QUESTION accepted with 200 (potential cap-enforcement finding for Phase 2 Judge to flag)
 
 - **P1-T14 — `chartbreaker/agents/red_team_lead.py` routing table + `chartbreaker/agents/orchestrator_agent.py` priority math**
   - Objective: Replace the straight-line MVP loop (P1-T11) with the proper Orchestrator → RedTeamLead → Specialist dispatch. RedTeamLead is a deterministic routing table keyed on `subcategory_id`. Orchestrator computes the priority score per `ARCHITECTURE.md` § Orchestration Strategy formula and emits `CampaignBrief`. No LLM narration yet (deferred to Phase 2 polish).

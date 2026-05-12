@@ -35,6 +35,8 @@ load_dotenv(_DOTENV_PATH)
 from chartbreaker import config, evals_loader  # noqa: E402  (after load_dotenv)
 from chartbreaker.agents.judge_agent import judge
 from chartbreaker.agents.specialists.injection_specialist import generate as injector_generate
+from chartbreaker.agents.specialists.protocol_specialist import generate as cracker_generate
+from chartbreaker.agents.specialists.tool_misuse_specialist import generate as saboteur_generate
 from chartbreaker.observability.store import ObservabilityStore
 from chartbreaker.state import AttackAttempt, CampaignBrief, CostObservation
 from chartbreaker.target_client import TargetClient
@@ -110,6 +112,56 @@ async def _run_one_injector_seed(
     _print_verdict_line(seed_id, verdict)
 
 
+async def _run_one_deterministic_probe(
+    subcategory_id: str,
+    specialist_name: str,
+    generate_fn,
+    rationale: str,
+    run_id: str,
+    target: TargetClient,
+    store: ObservabilityStore,
+) -> None:
+    """Dispatch one HTTP-shaped probe from a deterministic specialist."""
+    brief = CampaignBrief(
+        subcategory_id=subcategory_id,
+        mutation_budget=1,
+        max_cost_usd=config.BUDGETS.max_campaign_usd,
+        rationale=rationale,
+    )
+    store.write_campaign(run_id, brief)
+
+    attempt = generate_fn(brief)
+    store.write_attempt(run_id, attempt)
+
+    # No LLM cost — record a $0 cost row so per-attempt accounting is complete.
+    store.write_cost(
+        run_id,
+        CostObservation(
+            campaign_id=brief.campaign_id,
+            attempt_id=attempt.attempt_id,
+            agent=specialist_name,
+            provider="(deterministic)",
+            model="(deterministic)",
+            prompt_tokens=0,
+            completion_tokens=0,
+            usd=0.0,
+        ),
+    )
+
+    print(f"\nDispatching {specialist_name} probe for Cat {subcategory_id}...")
+    response = await target.dispatch(attempt)
+    store.write_target_response(run_id, response)
+
+    verdict = judge(
+        attempt,
+        response,
+        allowed_source_ids=[],
+        expected_pid=config.FIXTURE_PIDS[0],
+    )
+    store.write_verdict(run_id, verdict)
+    _print_verdict_line(f"{specialist_name}-cat-{subcategory_id}", verdict)
+
+
 async def _run_cat_5a_probe(
     run_id: str,
     target: TargetClient,
@@ -169,8 +221,27 @@ async def run_mvp_loop(operator: str) -> str:
         store.start_run(run_id, cli_command=cli_command, operator=operator)
         try:
             async with TargetClient() as target:
+                # LLM-driven prompt-craft via Injector
                 for seed_id in _MVP_INJECTOR_SEEDS:
                     await _run_one_injector_seed(seed_id, run_id, target, store)
+                # Deterministic protocol probes (Cracker)
+                await _run_one_deterministic_probe(
+                    "2f", "cracker", cracker_generate,
+                    "MVP loop Cat 2f — cross-tenant pid swap (PatientAccessGuard test)",
+                    run_id, target, store,
+                )
+                await _run_one_deterministic_probe(
+                    "6a", "cracker", cracker_generate,
+                    "MVP loop Cat 6a — CSRF X-CSRF-Token header suppressed",
+                    run_id, target, store,
+                )
+                # Deterministic envelope tampering (Saboteur)
+                await _run_one_deterministic_probe(
+                    "4c", "saboteur", saboteur_generate,
+                    "MVP loop Cat 4c — oversized USER_QUESTION (5x char cap)",
+                    run_id, target, store,
+                )
+                # Manual cost-amplification probe
                 await _run_cat_5a_probe(run_id, target, store)
         finally:
             store.end_run(run_id)
