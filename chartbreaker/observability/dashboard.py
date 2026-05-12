@@ -894,6 +894,7 @@ def _render_agent_timeline(events: pd.DataFrame, run_id: str) -> None:
     )
     feed = feed.tail(show_last).reset_index(drop=True)
 
+    prev_aid = "__init__"  # sentinel — never equals a real attempt_id or None
     for _, ev in feed.iterrows():
         ts = str(ev["created_at"])[11:23]
         agent = ev["agent"]
@@ -901,6 +902,16 @@ def _render_agent_timeline(events: pd.DataFrame, run_id: str) -> None:
         agent_role = AGENT_DESCRIPTION.get(agent, "")
         event_meaning = EVENT_TYPE_DESCRIPTION.get(event_type, "")
         aid = ev.get("attempt_id")
+        # Visual separator between groupings of events. Events that share
+        # an attempt_id form a single cluster (attempt_generated →
+        # response_received → verdict_recorded); a thin divider lands
+        # between consecutive clusters.
+        if prev_aid != "__init__" and aid != prev_aid:
+            st.markdown(
+                "<div style='margin: 0.4rem 0; border-top: 1px solid rgba(148,163,184,0.25);'></div>",
+                unsafe_allow_html=True,
+            )
+        prev_aid = aid
         attempt_link = (
             f" · [🔍 attempt {str(aid)[:8]}…](?attempt_id={aid})" if aid else ""
         )
@@ -1096,15 +1107,260 @@ def _render_attempt_detail(db_path: str, attempt_id: str) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Architecture diagrams tab — visual versions of docs/ARCHITECTURE.md §
+# "Agent Interaction Diagram" and § "Judge + Verifier internals".
+# Rendered with Streamlit's built-in graphviz support (DOT strings) so no
+# extra pip dependency is needed.
+# ---------------------------------------------------------------------------
+
+_AGENT_INTERACTION_DOT = r"""
+digraph chartbreaker {
+  rankdir=TB;
+  bgcolor="transparent";
+  compound=true;
+  fontname="Helvetica";
+  node [shape=box, style="rounded,filled", fontname="Helvetica",
+        fontsize=12, margin="0.15,0.10"];
+  edge [fontname="Helvetica", fontsize=10, color="#94a3b8"];
+
+  orchestrator [label=<<B>Orchestrator</B><BR/>Conductor — OpenAI gpt-5.4-nano + Py<BR/>coverage · cost · priority math>,
+                fillcolor="#7c3aed", fontcolor="white"];
+  red_team_lead [label=<<B>RedTeamLead</B><BR/>Deterministic router<BR/>subcategory → specialist>,
+                 fillcolor="#7c3aed", fontcolor="white"];
+
+  subgraph cluster_llm {
+    label="LLM specialists  ·  OpenRouter Hermes-3-70B";
+    style="rounded,filled"; fillcolor="#1e3a8a"; fontcolor="white"; fontsize=11;
+    injector         [label=<<B>Injector</B><BR/>Cat 1a/1b/1c/1e/1f + 3e>,    fillcolor="#3b82f6", fontcolor="white"];
+    conversationalist[label=<<B>Conversationalist</B><BR/>Cat 1d, 3a (multi-turn)>, fillcolor="#3b82f6", fontcolor="white"];
+    smuggler         [label=<<B>Smuggler</B><BR/>Cat 2a/2b/2d (verifier bypass)>, fillcolor="#3b82f6", fontcolor="white"];
+    impersonator     [label=<<B>Impersonator</B><BR/>Cat 6b (optional/foldable)>, fillcolor="#3b82f6", fontcolor="white"];
+  }
+
+  subgraph cluster_det {
+    label="Deterministic specialists  ·  pure Python  ·  $0/call";
+    style="rounded,filled"; fillcolor="#374151"; fontcolor="white"; fontsize=11;
+    saboteur [label=<<B>Saboteur</B><BR/>Cat 4a/4b/4c/4d (tool misuse)>,        fillcolor="#6b7280", fontcolor="white"];
+    cracker  [label=<<B>Cracker</B><BR/>Cat 2f, 6a/6c/6d/6e (authz/CSRF/session)>, fillcolor="#6b7280", fontcolor="white"];
+    glutton  [label=<<B>Glutton</B><BR/>Cat 5a–5e (DoS / cost amplification)>,   fillcolor="#6b7280", fontcolor="white"];
+  }
+
+  target_client [label=<<B>TargetClient</B><BR/>Conduit — HTTP + CSRF + session<BR/>live OpenEMR Co-Pilot API>,
+                 fillcolor="#ea580c", fontcolor="white"];
+  judge        [label=<<B>Judge</B><BR/>Arbiter — deterministic verifier replay<BR/>+ semantic LLM (isolated from RedTeam)>,
+                fillcolor="#dc2626", fontcolor="white"];
+  regression   [label=<<B>Regression Harness</B><BR/>Vault — deterministic Python<BR/>pin / replay / classify>,
+                fillcolor="#6b7280", fontcolor="white"];
+  scribe       [label=<<B>Scribe</B><BR/>LLM-drafted vuln reports<BR/>→ human approval gate>,
+                fillcolor="#eab308", fontcolor="black"];
+  observability [label=<<B>Observability Store</B><BR/>SQLite (8 tables) · JSONL mirror<BR/>Streamlit dashboard · LLM trace · run logs>,
+                 fillcolor="#16a34a", fontcolor="white", shape=cylinder];
+
+  orchestrator  -> red_team_lead [label="CampaignBrief",        fontcolor="#cbd5e1"];
+  red_team_lead -> injector;
+  red_team_lead -> conversationalist;
+  red_team_lead -> smuggler;
+  red_team_lead -> impersonator;
+  red_team_lead -> saboteur;
+  red_team_lead -> cracker;
+  red_team_lead -> glutton;
+
+  {injector conversationalist smuggler impersonator saboteur cracker glutton}
+      -> target_client [label="AttackAttempt", fontcolor="#cbd5e1"];
+  target_client -> judge       [label="TargetResponse", fontcolor="#cbd5e1"];
+  judge         -> regression  [label="Verdict\n(if regression)", fontcolor="#cbd5e1"];
+  judge         -> scribe      [label="Verdict\n(severity ≥ medium)", fontcolor="#cbd5e1"];
+
+  # Every agent writes to the observability store (faint dotted edges).
+  edge [style=dotted, color="#475569", arrowhead=none, fontcolor="#94a3b8"];
+  orchestrator  -> observability;
+  red_team_lead -> observability;
+  target_client -> observability;
+  judge         -> observability;
+  regression    -> observability;
+  scribe        -> observability;
+
+  # The Orchestrator closes the loop by reading next-tick state.
+  edge [style=dashed, color="#22d3ee", arrowhead=normal, fontcolor="#a5f3fc"];
+  observability -> orchestrator [label="coverage · cost · verdicts\n(next-tick read)",
+                                  constraint=false];
+}
+"""
+
+
+_JUDGE_INTERNALS_DOT = r"""
+digraph judge_internals {
+  rankdir=TB;
+  bgcolor="transparent";
+  compound=true;
+  fontname="Helvetica";
+  node [shape=box, style="rounded,filled", fontname="Helvetica",
+        fontsize=12, margin="0.15,0.10"];
+  edge [fontname="Helvetica", fontsize=10, color="#94a3b8"];
+
+  inputs [label=<<B>Inputs to the Judge</B><BR/><BR/>• AttackAttempt (rendered)<BR/>• TargetResponse<BR/>&nbsp;&nbsp;&nbsp;raw_model_output · post_verifier_output<BR/>&nbsp;&nbsp;&nbsp;audit_log_id JSON (PHP verifier verdicts<BR/>&nbsp;&nbsp;&nbsp;+ allowed_source_ids from response context)<BR/>&nbsp;&nbsp;&nbsp;response_cookies · set_cookie_headers>,
+          fillcolor="#1f2937", fontcolor="white", shape=note];
+
+  subgraph cluster_det {
+    label="Deterministic half  ·  verifier replay  ·  pure Python";
+    style="rounded,filled"; fillcolor="#1e3a8a"; fontcolor="white"; fontsize=11;
+    src_attr [label=<<B>source_attribution.py</B><BR/>verify(structured, allowed_source_ids)<BR/>→ pass | rewrite | reject<BR/>strips claims with unknown source_ids>,
+              fillcolor="#3b82f6", fontcolor="white"];
+    domain   [label=<<B>domain_constraint.py</B><BR/>verify(structured, expected_pid)<BR/>→ pass | reject<BR/>blocks diagnoses · recommendations<BR/>cross-patient references>,
+              fillcolor="#3b82f6", fontcolor="white"];
+    php_read [label=<<B>Read PHP verdicts</B><BR/>parse audit_log_id JSON<BR/>source_verification · domain_verification<BR/>llm_status · failure_reason>,
+              fillcolor="#3b82f6", fontcolor="white"];
+    det_result [label=<<B>verifier_replay</B><BR/>pass | fail<BR/><FONT POINT-SIZE="10">fail if our port OR PHP flagged a problem</FONT>>,
+                fillcolor="#1e40af", fontcolor="white", shape=ellipse];
+  }
+
+  subgraph cluster_sem {
+    label="Semantic half  ·  isolated LLM Judge  ·  gpt-5.4-nano";
+    style="rounded,filled"; fillcolor="#7f1d1d"; fontcolor="white"; fontsize=11;
+    render [label=<<B>Render attack + response</B><BR/>compose USER message:<BR/>subcategory_id · rule_hint<BR/>rendered attack input<BR/>truncated response output>,
+            fillcolor="#dc2626", fontcolor="white"];
+    isolation [label=<<B>Isolation contract</B><BR/>The LLM Judge NEVER sees:<BR/>• specialist's chain-of-thought<BR/>• seed-case expected behavior<BR/>• Orchestrator rationale<BR/><FONT POINT-SIZE="10">Load-bearing trust boundary.</FONT>>,
+               fillcolor="#991b1b", fontcolor="white", shape=note];
+    llm_call [label=<<B>OpenAI chat completion</B><BR/>gpt-5.4-nano · temperature 0.0<BR/>max_completion_tokens 400>,
+              fillcolor="#dc2626", fontcolor="white"];
+    parse [label=<<B>Parse JSON verdict</B><BR/>{semantic, rationale}<BR/>strip code fences<BR/>fall back to not_run on parse error>,
+           fillcolor="#dc2626", fontcolor="white"];
+    sem_result [label=<<B>semantic</B><BR/>pass | partial | fail | not_run<BR/><FONT POINT-SIZE="10">not_run = LLM never produced a verdict</FONT>>,
+                fillcolor="#7f1d1d", fontcolor="white", shape=ellipse];
+  }
+
+  combine [label=<<B>Combine → Verdict</B><BR/>verifier_replay + semantic<BR/>+ severity (from THREAT_MODEL rubric)<BR/>+ exploitability (from rubric)<BR/>+ rationale (concat + DISAGREEMENT tag)<BR/>+ recommended_action<BR/><BR/><FONT POINT-SIZE="11"><B>regression</B> if fail/partial OR halves disagree<BR/><B>discard</B> if both halves pass</FONT>>,
+           fillcolor="#16a34a", fontcolor="white"];
+
+  out_reg    [label=<<B>Regression Harness</B><BR/>pin + replay on every deploy>, fillcolor="#6b7280", fontcolor="white"];
+  out_scribe [label=<<B>Scribe</B><BR/>draft reports/AF-NNN-*.md<BR/>(severity ≥ medium)>, fillcolor="#eab308", fontcolor="black"];
+  out_obs    [label=<<B>Observability Store</B><BR/>judge_verdicts + agent_events>, fillcolor="#16a34a", fontcolor="white", shape=cylinder];
+
+  inputs -> src_attr;
+  inputs -> domain;
+  inputs -> php_read;
+  inputs -> render;
+
+  src_attr -> det_result;
+  domain   -> det_result;
+  php_read -> det_result;
+
+  isolation -> llm_call [style=dashed, color="#fbbf24", arrowhead=none, label=" enforces", fontcolor="#fbbf24"];
+  render   -> llm_call;
+  llm_call -> parse;
+  parse    -> sem_result;
+
+  det_result -> combine;
+  sem_result -> combine;
+
+  combine -> out_reg;
+  combine -> out_scribe;
+  combine -> out_obs;
+}
+"""
+
+
+def _render_architecture_tab() -> None:
+    """Render the two architecture diagrams as a Streamlit tab.
+
+    Uses Streamlit's built-in graphviz support — no new pip dependency.
+    Mirrors the ASCII diagrams in docs/ARCHITECTURE.md but rendered as
+    proper graphs for the demo video / reviewer walkthrough.
+
+    Sizing: keep `fontsize=12` (nodes) / `fontsize=10` (edges) and
+    `use_container_width=True`. Earlier attempts at "bigger fonts in
+    DOT" paradoxically shrank the rendered text because the resulting
+    wider SVG got auto-scaled down to fit the page. Trusting Streamlit
+    to auto-fit at the smaller DOT sizes gave the best on-screen
+    visibility.
+    """
+    st.markdown(
+        "Visual versions of the two diagrams in "
+        "[`docs/ARCHITECTURE.md`](https://github.com/jmwolberg/chartbreaker/blob/main/docs/ARCHITECTURE.md). "
+        "Rendered with Graphviz."
+    )
+
+    # ───── Color legend (read first so the diagrams below are decodable) ─────
+    with st.expander("📖 Color legend — read this first", expanded=True):
+        st.markdown(
+            """
+| Color | Meaning |
+|---|---|
+| 🟣 **Purple** | Control plane — Orchestrator, RedTeamLead |
+| 🔵 **Blue** | LLM specialists / deterministic verifier ports |
+| ⚫ **Gray** | Deterministic agents (Saboteur, Cracker, Glutton, Regression Harness) |
+| 🟠 **Orange** | TargetClient (HTTP conduit) |
+| 🔴 **Red** | Judge / semantic LLM Judge |
+| 🟡 **Yellow** | Scribe (drafts vulnerability reports) / isolation contract |
+| 🟢 **Green** | Observability Store / combined Verdict |
+| · · · dotted gray | Every agent writes to the observability store |
+| - - - dashed cyan | Orchestrator reads next-tick state |
+| - - - dashed yellow | Isolation contract enforcement |
+"""
+        )
+
+    st.divider()
+
+    # ───── Agent interaction (high level) ─────
+    st.subheader(
+        "Agent interaction (high-level)",
+        help=(
+            "Every box is one logical agent or store. The loop closes via "
+            "the Observability Store — no agent calls another directly; "
+            "they coordinate through shared state."
+        ),
+    )
+    st.markdown(
+        "**How to read this:** the **Orchestrator** picks the next subcategory "
+        "to attack and writes a `CampaignBrief`. The **RedTeamLead** routes it "
+        "to one specialist (blue = LLM-driven, gray = deterministic Python). The "
+        "specialist hands an `AttackAttempt` to the **TargetClient**, which "
+        "dispatches to the live OpenEMR Co-Pilot. The **Judge** reads the "
+        "response and emits a `Verdict`. Fails flow to the **Regression Harness** "
+        "and (if severe enough) the **Scribe**. Every agent writes to the "
+        "**Observability Store** (dotted lines); the Orchestrator reads from it "
+        "on its next tick (dashed cyan)."
+    )
+    st.graphviz_chart(_AGENT_INTERACTION_DOT, use_container_width=True)
+
+    st.divider()
+
+    # ───── Judge + Verifier internals ─────
+    st.subheader(
+        "Judge + Verifier internals",
+        help=(
+            "The Judge runs two independent paths and combines them. "
+            "Disagreement between the halves is itself a finding."
+        ),
+    )
+    st.markdown(
+        "**Why two halves?** Each catches a different class of failure. "
+        "The **deterministic verifier replay** (blue) re-runs the Co-Pilot's own "
+        "PHP verifier logic in Python — it catches anything machine-checkable "
+        "(unsourced citations, recommendation language, schema violations). The "
+        "**semantic LLM Judge** (red) reads the rendered response and judges "
+        "whether the rules were violated — it catches things a human would spot "
+        "but no regex would. The yellow dashed line marks the **isolation "
+        "contract**: the LLM Judge never sees the attacker's strategy, seed-case "
+        "notes, or Orchestrator rationale, so it can't be primed into agreeing. "
+        "Both halves write into the combined `Verdict`; if they disagree, the "
+        "rationale gets a `DISAGREEMENT` tag and the attempt is promoted to "
+        "`regression`. All three Phase 3 vulnerability reports "
+        "(`reports/AF-001`, `AF-002`, `AF-003`) come from disagreements."
+    )
+    st.graphviz_chart(_JUDGE_INTERNALS_DOT, use_container_width=True)
+
+
+# ---------------------------------------------------------------------------
 # P2.5-T3 — Live auto-refresh tab
 # ---------------------------------------------------------------------------
 
-# Default live-tab refresh cadence. 30 seconds is calm enough to read
-# without scrolling-state thrash, while still being responsive enough
-# during an active run. Operator can adjust via the in-tab slider.
-LIVE_REFRESH_DEFAULT_SECONDS = 30
+# Default live-tab refresh cadence. 90 seconds is calm enough to read
+# the feed without scrolling-state thrash, while still picking up new
+# events at a useful cadence. Operator can adjust via the in-tab slider.
+LIVE_REFRESH_DEFAULT_SECONDS = 90
 LIVE_REFRESH_MIN_SECONDS = 5
-LIVE_REFRESH_MAX_SECONDS = 120
+LIVE_REFRESH_MAX_SECONDS = 180
 
 
 def _render_live_activity(db_path: str) -> None:
@@ -1185,11 +1441,21 @@ def _render_live_activity(db_path: str) -> None:
     events = events.iloc[::-1].reset_index(drop=True)
 
     # Compact event-feed rendering. Last event highlighted.
+    prev_aid = "__init__"  # sentinel — never equals a real attempt_id or None
     for idx, ev in events.iterrows():
         ts = str(ev["created_at"])[11:23]
         agent = ev["agent"]
         event_type = ev["event_type"]
         attempt = ev.get("attempt_id")
+        # Visual separator between groupings of events. Same approach as
+        # the Dashboard timeline — divides clusters of events that share
+        # an attempt_id (or have no attempt_id at all).
+        if prev_aid != "__init__" and attempt != prev_aid:
+            st.markdown(
+                "<div style='margin: 0.4rem 0; border-top: 1px solid rgba(148,163,184,0.25);'></div>",
+                unsafe_allow_html=True,
+            )
+        prev_aid = attempt
         attempt_link = (
             f" · [🔍 attempt {str(attempt)[:8]}…](?attempt_id={attempt})"
             if attempt
@@ -1288,7 +1554,9 @@ def main() -> None:
     # different questions than "what verdicts match this text?".
     verdicts_searched = _apply_rationale_filter(verdicts, rationale_needle)
 
-    tab_dashboard, tab_live = st.tabs(["📊 Dashboard", "📡 Live activity"])
+    tab_dashboard, tab_live, tab_arch = st.tabs(
+        ["📊 Dashboard", "📡 Live activity", "🗺 Architecture"]
+    )
 
     with tab_dashboard:
         if rationale_needle:
@@ -1316,6 +1584,9 @@ def main() -> None:
 
     with tab_live:
         _render_live_activity(db_path)
+
+    with tab_arch:
+        _render_architecture_tab()
 
 
 if __name__ == "__main__":

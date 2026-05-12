@@ -38,11 +38,11 @@
 - **Non-goals affecting implementation** (`PROJECT_STRATEGY.md` § Non-Goals): no SIEM/WAF/HIDS, no auto-remediation, no multi-target campaigns, no multi-tenant SaaS, no control GUI (read-only dashboard only), no live PHI (synthetic fixture patients only).
 
 ## Current Status
-- **Overall status:** Phase 1 — MVP Floor **complete** (15/16). Phase 2 rubric-critical subset (T8, T7, T1, T2, T4, T5, T11) **complete**. **Phase 2.5 complete** (all 6 tickets). **Phase 3 substantially complete**: vuln reports (3), cost analysis, CI workflow, README, social draft all in. Only P3-T4 demo video recording pending — script ready in `docs/SUBMISSION_DRAFTS.md`. Deferred Phase-2 tickets (T3 Glutton, T9 Scribe+redactor, T10 cross-cat regression, T12 narration, T6 Impersonator) remain out of scope.
-- **Current phase:** Phase 3 — Final Polish (submission-ready)
-- **Current ticket:** none active — only P3-T4 demo recording awaits human action
+- **Overall status:** Phase 1 — MVP Floor **complete** (15/16). Phase 2 rubric-critical subset (T8, T7, T1, T2, T4, T5, T11) **complete**. **Phase 2.5 complete** (all 6 tickets). **Phase 3 complete** — vuln reports (3), cost analysis, CI workflow, README final pass, social draft, demo video all in. Deferred Phase-2 tickets (T3 Glutton, T9 Scribe+redactor, T10 cross-cat regression, T12 narration, T6 Impersonator) remain out of scope.
+- **Current phase:** Submission-ready
+- **Current ticket:** none active
 - **Blockers:** None
-- **Last updated:** 2026-05-11 after Phase 3 substantially complete
+- **Last updated:** 2026-05-11 after Phase 3 completion
 
 ---
 
@@ -375,7 +375,7 @@ Generate the Final-only submission artifacts: vulnerability reports from live fi
   - Files likely involved: video uploaded externally, link added to `README.md`
   - Depends on: P3-T1 (vuln reports exist to show); P2-T11 (local dashboard built)
   - Acceptance criteria covered: `ASSIGNMENT.md` § Submission Requirements "Demo Video" row
-  - Status: **Awaiting human action** — Full 3-act recording script + pre-recording terminal commands in [`docs/SUBMISSION_DRAFTS.md`](SUBMISSION_DRAFTS.md). Operator records, uploads externally (YouTube unlisted recommended), updates README + this ticket with link.
+  - Status: Complete — recorded by operator using the 3-act script in `docs/SUBMISSION_DRAFTS.md`. README's Submission artifacts table to be updated with the published video URL post-upload.
 
 - **P3-T5 — Social post on X / LinkedIn tagging @GauntletAI**
   - Objective: One paragraph + one dashboard screenshot (from the local dashboard recorded in P3-T4). Drafted alongside README update. Per `PROJECT_STRATEGY.md` § Demo & Social Plan.
