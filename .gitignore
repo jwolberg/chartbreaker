@@ -11,6 +11,12 @@ __pycache__/
 .venv/
 venv/
 
+# ChartBreaker runtime artifacts (local-only per docs/PROJECT_STRATEGY.md
+# § Operating Model § Hosting Topology — CI uploads its runs.sqlite as a
+# GitHub release attachment; local copies stay local).
+observability/
+.pytest_cache/
+
 .claude/*
 !.claude/skills/
 .claude/skills/*
