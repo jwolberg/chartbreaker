@@ -38,11 +38,11 @@
 - **Non-goals affecting implementation** (`PROJECT_STRATEGY.md` § Non-Goals): no SIEM/WAF/HIDS, no auto-remediation, no multi-target campaigns, no multi-tenant SaaS, no control GUI (read-only dashboard only), no live PHI (synthetic fixture patients only).
 
 ## Current Status
-- **Overall status:** Phase 1 — MVP Floor **complete** (15 of 16 tickets done, P1-T15 LangGraph deferred to Phase 2 with rationale). MVP rubric hard gate met with live evidence across 6 attack categories. Phase 2 in progress (rubric-critical subset T8 → T7 → T1 → T2 → T4 → T5 → T11).
-- **Current phase:** Phase 2 — MVP-to-Final
-- **Current ticket:** P2-T11 (Streamlit dashboard)
+- **Overall status:** Phase 1 — MVP Floor **complete** (15/16). Phase 2 rubric-critical subset (T8, T7, T1, T2, T4, T5, T11) **complete**. Remaining Phase-2 tickets (T3 Glutton, T9 Scribe+redactor, T10 cross-cat regression, T12 narration, T6 optional Impersonator) deferred — rubric Exit Criteria are now reachable.
+- **Current phase:** Phase 2 — MVP-to-Final (rubric subset complete)
+- **Current ticket:** none active (Phase 3 or deferred Phase-2 tickets next)
 - **Blockers:** None
-- **Last updated:** 2026-05-11 after P2-T5 completion
+- **Last updated:** 2026-05-11 after P2-T11 completion
 
 ---
 
@@ -265,7 +265,7 @@ Layer in the components `ARCHITECTURE.md` § MVP vs Final Cut marks as Final-onl
   - Files likely involved: `chartbreaker/observability/dashboard.py`
   - Depends on: P1-T7
   - Acceptance criteria covered: `ARCHITECTURE.md` § Observability Layer; `PROJECT_STRATEGY.md` § Operating Model § Interface Strategy (CLI primary + read-only dashboard)
-  - Status: Todo
+  - Status: Complete — `chartbreaker/observability/dashboard.py` renders the rubric questions (summary metrics, per-category coverage bar, verifier + semantic verdict mix, severity distribution, open-vulns table with regression-flagged rows, per-agent cost table, agent-activity timeline). Sidebar run picker filters all panels to one run or "All runs". Local only (`streamlit run chartbreaker/observability/dashboard.py`); served HTTP 200 on `localhost:8501` in smoke test.
 
 - **P2-T12 — Orchestrator narration + RedTeamLead narration**
   - Objective: Add the LLM-narration half to Orchestrator and RedTeamLead (gpt-5.4-nano per registry) — human-readable campaign rationale and dispatch trace. Math layer remains load-bearing; narration is operator polish.
