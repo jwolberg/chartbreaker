@@ -38,10 +38,11 @@
 - **Non-goals affecting implementation** (`PROJECT_STRATEGY.md` § Non-Goals): no SIEM/WAF/HIDS, no auto-remediation, no multi-target campaigns, no multi-tenant SaaS, no control GUI (read-only dashboard only), no live PHI (synthetic fixture patients only).
 
 ## Current Status
-- **Overall status:** Not Started
+- **Overall status:** Phase 1 — MVP Floor in progress (6 of 16 tickets complete)
 - **Current phase:** Phase 1 — MVP Floor
-- **Current ticket:** P1-T1 (recommended start)
+- **Current ticket:** P1-T7 (observability SQLite + JSONL writer)
 - **Blockers:** None
+- **Last updated:** 2026-05-11 after commit `d09548c`
 
 ---
 
@@ -67,49 +68,49 @@ Every row in `PROJECT_STRATEGY.md` § Success Criteria § MVP is green:
   - Files likely involved: `README.md`
   - Depends on: nothing
   - Acceptance criteria covered: `PROJECT_STRATEGY.md` § Success Criteria § MVP "Documents complete" row; `ASSIGNMENT.md` § Submission Requirements "GitHub Repository" row
-  - Status: Todo
+  - Status: Complete (commit `0dd4123`)
 
 - **P1-T2 — Replace/rescope `AF-SEED-008`**
   - Objective: The current seed targets the out-of-scope Next.js Dashboard JWT launch path. Re-scope to a Co-Pilot-relevant Category 6 seed (persona hijacking or CSRF replay) per `THREAT_MODEL.md` § Out of Scope and `PROJECT_STRATEGY.md` § Refreshed Immediate Gaps row 6.
   - Files likely involved: `evals/seed_cases.yaml`
   - Depends on: nothing
   - Acceptance criteria covered: `THREAT_MODEL.md` § Out of Scope (dashboard explicitly excluded); `PROJECT_STRATEGY.md` § Refreshed Immediate Gaps row 6
-  - Status: Todo
+  - Status: Complete (commit `0dd4123`)
 
 - **P1-T3 — `chartbreaker/config.py` with `MODEL_REGISTRY`**
   - Objective: Central config: target URL (hardcoded), session credentials (env-loaded), per-role model registry per `ARCHITECTURE.md` § Model Configuration default table, cost budgets, fixture-patient pid list.
   - Files likely involved: `chartbreaker/config.py`, `chartbreaker/__init__.py`, `.env.example`
   - Depends on: nothing
   - Acceptance criteria covered: `ARCHITECTURE.md` § Model Configuration (default registry); `ARCHITECTURE.md` § Target Deployment; `PROJECT_STRATEGY.md` § Operating Model § Secrets Management
-  - Status: Todo
+  - Status: Complete (commit `621bcb9`)
 
 - **P1-T4 — `chartbreaker/state.py` Pydantic state objects**
   - Objective: Typed `CampaignBrief`, `AttackAttempt`, `TargetResponse`, `Verdict`, `RegressionReport`, `ReportDraft`, `CostObservation` per `ARCHITECTURE.md` § Inter-Agent Communication message-types block.
   - Files likely involved: `chartbreaker/state.py`
   - Depends on: P1-T3
   - Acceptance criteria covered: `ARCHITECTURE.md` § Inter-Agent Communication (message types list)
-  - Status: Todo
+  - Status: Complete (commit `eb0af1e`)
 
 - **P1-T5 — `chartbreaker/llm_client.py` OpenAI-compatible dispatcher**
   - Objective: Thin async `httpx` wrapper that reads `MODEL_REGISTRY[role]` and dispatches against OpenAI / OpenRouter / Ollama / Anthropic over `/v1/chat/completions`. Records `{role, provider, model}` on every call for trace replayability.
   - Files likely involved: `chartbreaker/llm_client.py`
   - Depends on: P1-T3
   - Acceptance criteria covered: `ARCHITECTURE.md` § Model Configuration; `ARCHITECTURE.md` § Framework, State, and Coordination
-  - Status: Todo
+  - Status: Complete (commit `6b59b53`)
 
 - **P1-T6 — `chartbreaker/target_client.py` Co-Pilot HTTP wrapper**
   - Objective: Authenticate as the dedicated ChartBreaker test user, capture session cookie + CSRF token, dispatch `briefing` and `followup` requests with both body `csrf_token` and mirrored `X-CSRF-Token` header per `CopilotController.php:259`. Single-target invariant enforced in code (refuse hosts ≠ configured base URL unless `--target-override --i-understand-this-attacks-the-target`). Returns `TargetResponse` capturing raw output, post-verifier output, HTTP status, latency, token usage, audit ID.
   - Files likely involved: `chartbreaker/target_client.py`
   - Depends on: P1-T3, P1-T4
   - Acceptance criteria covered: `ARCHITECTURE.md` § Conduit — Target Client; `PROJECT_STRATEGY.md` § Success Criteria § MVP "Live target reachable from CLI" row; `ARCHITECTURE.md` § Human Approval Gates (single-target invariant)
-  - Status: Todo
+  - Status: Complete (commit `d09548c`)
 
 - **P1-T7 — Observability: SQLite schema + JSONL writer**
   - Objective: `observability/schema.sql` with tables from `PROJECT_STRATEGY.md` § Logging and State Store Requirement (`runs`, `campaigns`, `attempts`, `agent_events`, `target_responses`, `judge_verdicts`, `findings`, `costs`). Append-only JSONL mirror to `observability/traces.jsonl`. Schema version column on `runs` for forward migration.
   - Files likely involved: `chartbreaker/observability/__init__.py`, `chartbreaker/observability/schema.sql`, `chartbreaker/observability/store.py`
   - Depends on: P1-T4
   - Acceptance criteria covered: `PROJECT_STRATEGY.md` § Logging and State Store Requirement (table list); `ARCHITECTURE.md` § Observability Layer; `PROJECT_STRATEGY.md` § Operating Model § Database (schema versioning)
-  - Status: Todo
+  - Status: Complete (commit pending)
 
 - **P1-T8 — Verifier replay (Python ports)**
   - Objective: Port `SourceAttributionVerifier` and `DomainConstraintVerifier` from the Co-Pilot module's PHP to Python. Parity test fixture: a curated set of known-good and known-bad Co-Pilot outputs where the PHP verifier verdict is recorded; the Python ports must match byte-for-byte.
@@ -375,13 +376,12 @@ Generate the Final-only submission artifacts: vulnerability reports from live fi
 
 ## Recommended Next Step
 
-- **Start with:** P1-T1 — README.md
-- **Why this is first:**
-  - Zero dependencies.
-  - Required for MVP submission (`ASSIGNMENT.md` § Submission Requirements "GitHub Repository" row).
-  - Short (~1 hour per `PROJECT_STRATEGY.md` § Refreshed Immediate Gaps row 2).
-  - Forces an explicit env-var inventory and CLI surface declaration before any code that depends on those names is written — catches misalignments cheaply.
-  - In parallel a fast operator could run P1-T2 (rescope AF-SEED-008, ~30 min) since both are no-dependency text-only tasks. P1-T3 (`config.py`) can also start in parallel since it has no upstream blockers.
+- **Start with:** P1-T7 — Observability SQLite schema + JSONL writer
+- **Why this is first now:**
+  - P1-T1 through P1-T6 are complete (commits `0dd4123` → `d09548c`); the foundation is laid.
+  - P1-T7 has only P1-T4 as a dependency (state.py is in), so it's unblocked.
+  - The Judge (P1-T9) and the rubric-gate end-to-end loop (P1-T11) both need to persist results, so the observability writer is on the critical path before either can run live.
+  - Verifier replay (P1-T8) can be done in parallel since it only depends on P1-T3 — it does not require the SQLite writer.
 
 ---
 
