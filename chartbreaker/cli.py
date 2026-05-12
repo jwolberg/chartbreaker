@@ -20,13 +20,17 @@ import asyncio
 import getpass
 import logging
 import sys
+from pathlib import Path
 from uuid import uuid4
 
 from dotenv import load_dotenv
 
-# Load .env before any module reads os.environ. Walks up from CWD looking for
-# the file so the CLI works whether you invoke it from repo root or elsewhere.
-load_dotenv()
+# Load .env from the repo root deterministically, regardless of CWD.
+# Layout: <repo>/chartbreaker/cli.py → repo root is two parents up.
+# Layout reference: docs/ARCHITECTURE.md § File Layout.
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+_DOTENV_PATH = _REPO_ROOT / ".env"
+load_dotenv(_DOTENV_PATH)
 
 from chartbreaker import config, evals_loader  # noqa: E402  (after load_dotenv)
 from chartbreaker.agents.judge_agent import judge
