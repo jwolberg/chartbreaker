@@ -61,7 +61,14 @@ Where to look for specific signals:
 | Judge semantic-call fallback to deterministic | `chartbreaker.agents.judge_agent` | WARNING |
 | SQLite write or schema-migration warnings | `chartbreaker.observability.store` | WARNING |
 
-Logs are **not** persisted to a file by default — only to stderr. If you need a durable record:
+Logs are **not** persisted to a file by default — only to stderr. To capture them automatically, use **P2.5-T6**'s `--log-file` flag:
+
+```bash
+chartbreaker run-mvp-loop --verbose --log-file           # auto path: observability/run-<run_id>.log
+chartbreaker run-mvp-loop --verbose --log-file my.log    # explicit path
+```
+
+The flag attaches a DEBUG-level handler for the duration of the run and detaches it cleanly on exit. Equivalent shell redirect if you prefer:
 
 ```bash
 chartbreaker run-mvp-loop --verbose 2> observability/run-$(date +%s).log
@@ -177,13 +184,17 @@ The dashboard answers the rubric's observability questions from `runs.sqlite`. L
 
 Run picker in the sidebar filters every panel to one run or "All runs."
 
-### What the dashboard does NOT cover (gaps)
+### What the dashboard does NOT cover (gaps — most now closed by Phase 2.5)
 
-1. **Per-attempt drill-down.** You see aggregates and the open-vulns list, but you cannot click an `attempt_id` and get the full prompt + target response + Judge rationale on one screen. Today: use the SQL drill-down recipe above.
-2. **Live / streaming view.** Streamlit caches table reads for 10 seconds. The dashboard is a read-after-run tool, not a real-time monitor. Today: live tail `traces.jsonl`.
-3. **LLM request / response payloads.** The `costs` table records *that* an LLM call happened with token counts; it does **not** record the prompt sent or the response received. The specialist input prompts are in `attempts` (because that's what got sent to the target), but the Judge's semantic-LLM prompt and the Co-Pilot's pre-PHP-verifier raw output are not captured. Today: enable `--verbose` and watch stderr; add a payload-trace flag in a follow-up.
-4. **Inter-agent communication detail.** `agent_events` records *who* did *what*, but the dashboard timeline groups by `(agent, event_type)` without expanding the `payload` JSON. To see "Orchestrator told RedTeamLead to dispatch X" you currently have to query `agent_events.payload`. Today: SQL the `agent_events` table; in the future, a dedicated dashboard panel.
-5. **Search across rationales.** "Show me every finding that mentions 'persona' or 'medication:42'." Today: SQL `LIKE` on `judge_verdicts.rationale`.
+1. **~~Per-attempt drill-down.~~** ✅ Closed by **P2.5-T1**. Click the `🔍 detail` link in the open-vulns table, or visit `?attempt_id=<id>` directly. The detail page shows attack input + target response + PHP verifier verdicts + Judge rationale + cost rows + per-attempt event timeline on one screen.
+2. **~~Live / streaming view.~~** ✅ Closed by **P2.5-T3**. The "📡 Live activity" tab polls the latest 50 `agent_events` and reloads every 2 seconds via HTML meta-refresh. Open it in a side tab during a run; click any event's `attempt_id` to jump into its drill-down.
+3. **~~LLM request / response payloads.~~** ✅ Closed by **P2.5-T2**. `chartbreaker run-mvp-loop --trace-llm-io` writes every `chat()` call's full request + response (with token counts, latency, cost) to `observability/llm-trace-<run_id>.jsonl`. Off by default to avoid disk bloat. Grep / jq friendly.
+4. **~~Inter-agent communication detail.~~** ✅ Closed by **P2.5-T4**. The timeline panel is now a chronological event feed with each `agent_events.payload` JSON foldable inline; the old bucketed bar chart is preserved inside an "Aggregate event counts" expander. Filter by agent; cap the visible list at the last N events.
+5. **~~Search across rationales.~~** ✅ Closed by **P2.5-T5**. Sidebar "Search rationales" text input — case-insensitive substring match. Filters the verdict-mix, severity, and open-vulns panels live.
+
+Remaining minor gaps:
+- The semantic-Judge prompt is captured only when `--trace-llm-io` is on. Same for specialist LLM prompts. Cost rows always persist regardless.
+- The dashboard timeline shows the last N events per run; for full historical replay use the SQL recipe below.
 
 ---
 
@@ -206,14 +217,13 @@ Run picker in the sidebar filters every panel to one run or "All runs."
 
 ---
 
-## Suggested follow-up work to close gaps
+## Suggested follow-up work
 
-Recommended priority order if/when we extend Phase 2:
+Phase 2.5 closed the five originally-documented gaps (T1 drill-down, T2 LLM trace, T3 live tab, T4 timeline detail, T5 rationale search) plus added run-log auto-capture (T6). Possible next steps if more observability investment is wanted:
 
-1. **Per-attempt drill-down page in the dashboard.** Streamlit `st.query_params` + a new `_render_attempt_detail()` view. Data is already in the DB; this is a UI-only ticket.
-2. **LLM payload trace flag.** `--trace-llm-io` writes every `chat()` call's full request + response to `observability/llm-trace-<run_id>.jsonl`. Closes gap #3 above without bloating the SQLite store with multi-kB prompts.
-3. **Orchestrator + RedTeamLead narration (already on the roadmap as P2-T12).** Each routing decision writes a human-readable rationale to `agent_events.payload`, which then renders in the dashboard timeline.
-4. **Auto-refreshing live panel.** A second Streamlit page with `st.autorefresh(2000)` that just tails the recent `agent_events` rows. Closes gap #2 above without rewriting the existing aggregate views.
-5. **Rationale search.** A text input in the dashboard sidebar that filters the open-vulns and verdict-mix panels by substring match on `judge_verdicts.rationale`.
+1. **Orchestrator + RedTeamLead narration (P2-T12 — deferred).** Each routing decision writes a human-readable rationale to `agent_events.payload`, which then renders in the P2.5-T4 timeline panel. The panel already supports inline JSON payload display, so the value lands the moment narration ships.
+2. **Verdict-disagreement panel.** Today the rationale carries a `DISAGREEMENT` tag when semantic and verifier_replay disagree. A dedicated panel that lists those rows separately would highlight the platform's marquee finding type without requiring rationale search.
+3. **Run comparison view.** Side-by-side coverage/severity for two selected runs, so "did the fix help?" is a one-screen answer rather than two tabs.
+4. **Persist Judge LLM prompts to SQLite.** Currently captured only when `--trace-llm-io` is on. A small column on `judge_verdicts` could store the rendered Judge prompt for every run.
 
-None of these are blocking the rubric Exit Criteria — they're operator quality-of-life improvements for the final-week demo and post-submission analysis.
+None of these are blocking — Phase 2.5 already covers the operator-quality needs called out in the rubric.
