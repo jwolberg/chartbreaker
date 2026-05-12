@@ -38,11 +38,11 @@
 - **Non-goals affecting implementation** (`PROJECT_STRATEGY.md` § Non-Goals): no SIEM/WAF/HIDS, no auto-remediation, no multi-target campaigns, no multi-tenant SaaS, no control GUI (read-only dashboard only), no live PHI (synthetic fixture patients only).
 
 ## Current Status
-- **Overall status:** Phase 1 — MVP Floor **complete** (15/16). Phase 2 rubric-critical subset (T8, T7, T1, T2, T4, T5, T11) **complete**. **Phase 2.5 complete** (all 6 tickets: T1 drill-down, T2 LLM trace, T3 live tab, T4 timeline detail, T5 rationale search, T6 run-log capture). Remaining Phase-2 tickets (T3 Glutton, T9 Scribe+redactor, T10 cross-cat regression, T12 narration, T6 optional Impersonator) deferred — rubric Exit Criteria are reachable without them.
-- **Current phase:** Phase 3 — Final Polish (submission artifacts)
-- **Current ticket:** none active (next: pick from P3-T1 vuln reports → P3-T2 cost analysis → P3-T4 demo video)
+- **Overall status:** Phase 1 — MVP Floor **complete** (15/16). Phase 2 rubric-critical subset (T8, T7, T1, T2, T4, T5, T11) **complete**. **Phase 2.5 complete** (all 6 tickets). **Phase 3 substantially complete**: vuln reports (3), cost analysis, CI workflow, README, social draft all in. Only P3-T4 demo video recording pending — script ready in `docs/SUBMISSION_DRAFTS.md`. Deferred Phase-2 tickets (T3 Glutton, T9 Scribe+redactor, T10 cross-cat regression, T12 narration, T6 Impersonator) remain out of scope.
+- **Current phase:** Phase 3 — Final Polish (submission-ready)
+- **Current ticket:** none active — only P3-T4 demo recording awaits human action
 - **Blockers:** None
-- **Last updated:** 2026-05-11 after Phase 2.5 completion
+- **Last updated:** 2026-05-11 after Phase 3 substantially complete
 
 ---
 
@@ -354,7 +354,7 @@ Generate the Final-only submission artifacts: vulnerability reports from live fi
   - Files likely involved: `reports/AF-001-*.md`, `reports/AF-002-*.md`, `reports/AF-003-*.md`
   - Depends on: P2-T9, sufficient platform runtime
   - Acceptance criteria covered: `ASSIGNMENT.md` § Submission Requirements "Vulnerability Reports" row (minimum 3); `PROJECT_STRATEGY.md` § Success Criteria § Final "Vulnerability reports drafted" row
-  - Status: Todo
+  - Status: Complete — fresh live sweep against the deployed Co-Pilot (run_id=`d4a3cf7a-6d97-45f0-80a3-741e33ff30a9`, semantic Judge on) produced 6 regression-flagged findings across 4 categories. 3 strongest written up: **AF-001** indirect-injection partial DOB leak (Cat 1b, high), **AF-002** USER_QUESTION cap not enforced + cost amplification (Cat 4c, medium), **AF-003** session cookie missing HttpOnly (Cat 6d, high). Each report includes reproducible attack sequence, why-existing-defenses-missed-it, recommended remediation, and related-findings cross-refs.
 
 - **P3-T2 — `COST_ANALYSIS.md` at 100 / 1K / 10K / 100K**
   - Objective: Actual dev spend (from `costs` table) + projected production costs at four scale tiers. At 100K: identify architectural changes needed (Judge-LLM gating on verifier disagreement, scheduled Orchestrator vs continuous, batch eval mode). Per `ARCHITECTURE.md` § Cost, Scale, and Model Constraints.
@@ -375,21 +375,21 @@ Generate the Final-only submission artifacts: vulnerability reports from live fi
   - Files likely involved: video uploaded externally, link added to `README.md`
   - Depends on: P3-T1 (vuln reports exist to show); P2-T11 (local dashboard built)
   - Acceptance criteria covered: `ASSIGNMENT.md` § Submission Requirements "Demo Video" row
-  - Status: Todo
+  - Status: **Awaiting human action** — Full 3-act recording script + pre-recording terminal commands in [`docs/SUBMISSION_DRAFTS.md`](SUBMISSION_DRAFTS.md). Operator records, uploads externally (YouTube unlisted recommended), updates README + this ticket with link.
 
 - **P3-T5 — Social post on X / LinkedIn tagging @GauntletAI**
   - Objective: One paragraph + one dashboard screenshot (from the local dashboard recorded in P3-T4). Drafted alongside README update. Per `PROJECT_STRATEGY.md` § Demo & Social Plan.
   - Files likely involved: external; link committed to `README.md`
   - Depends on: P3-T4 (screenshot lifted from the demo recording)
   - Acceptance criteria covered: `ASSIGNMENT.md` § Submission Requirements "Social Post (Final only)" row
-  - Status: Todo
+  - Status: Complete (draft) — Both short (X, 280 chars) and long (LinkedIn, ~1500 chars) versions drafted in [`docs/SUBMISSION_DRAFTS.md`](SUBMISSION_DRAFTS.md) with image-attach guidance. Awaiting human publication; URL gets backfilled into the README after posting.
 
 - **P3-T6 — README final pass with reviewer links**
   - Objective: Update the README from P1-T1 with: the deployed target URL (already known), the demo video link, the social post link, and the GitHub release URL pointing to the CI-produced `runs.sqlite` artifact. No public ChartBreaker URL — by design, ChartBreaker has no public surface.
   - Files likely involved: `README.md`
   - Depends on: P3-T3, P3-T4, P3-T5
   - Acceptance criteria covered: `ASSIGNMENT.md` § Submission Requirements "GitHub Repository" row
-  - Status: Todo
+  - Status: Complete — README refreshed end-to-end: corrected CLI commands (run-mvp-loop + regress + calibrate, with --semantic-judge / --trace-llm-io / --log-file flags), updated default model registry, expanded Observability section with the four signal layers, added Submission artifacts table linking the 3 vuln reports + COST_ANALYSIS.md + observability guide + CI release tag. Demo video / social post URL rows are placeholders pending P3-T4 / P3-T5 publication.
 
 ---
 

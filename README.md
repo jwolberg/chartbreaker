@@ -46,7 +46,7 @@ $EDITOR .env   # fill in the values below
 | `CHARTBREAKER_TARGET_USER` | Dedicated test-user username on the Co-Pilot target (NOT admin) |
 | `CHARTBREAKER_TARGET_PASSWORD` | Test-user password |
 | `OPENAI_API_KEY` | OpenAI key — used by Orchestrator / RedTeamLead / Judge / Scribe (default `gpt-5.4-nano`) |
-| `OPENROUTER_API_KEY` | OpenRouter key — used by offensive specialists (default `cognitivecomputations/dolphin-mixtral-8x22b`) |
+| `OPENROUTER_API_KEY` | OpenRouter key — used by offensive specialists (default `nousresearch/hermes-3-llama-3.1-70b`) |
 
 Optional: `ANTHROPIC_API_KEY` (if `MODEL_REGISTRY` is repointed), `LANGCHAIN_API_KEY` (LangSmith traces).
 
@@ -54,22 +54,23 @@ Configure which model handles which role in [`chartbreaker/config.py`](chartbrea
 
 ## Running ChartBreaker
 
-> The CLI commands below land progressively across Phase 1. See [`docs/BUILD_PLAN.md`](docs/BUILD_PLAN.md) for current ticket status.
-
 ```bash
-# Run a targeted campaign against one threat-model subcategory
-python -m chartbreaker.cli run --campaign cat-1b-indirect-injection --mutation-budget 10
-
-# Run the seed suite once across every category (the rubric MVP path)
-python -m chartbreaker.cli run --seed-only
+# Run the full MVP loop across 14 attack subcategories against the live target.
+# --semantic-judge enables the OpenAI gpt-5.4-nano Judge layered on top of
+# verifier replay. --trace-llm-io captures every chat() request + response
+# to observability/llm-trace-<run_id>.jsonl. --log-file tees Python logs to
+# observability/run-<run_id>.log.
+python -m chartbreaker.cli run-mvp-loop --semantic-judge --trace-llm-io --log-file
 
 # Re-run the pinned regression suite against the live target
 python -m chartbreaker.cli regress
 
-# Replay a previously-recorded run deterministically against stored fixtures
-python -m chartbreaker.cli run --replay <run_id>
+# Replay the judge calibration set against the semantic Judge
+python -m chartbreaker.cli calibrate
 
-# Local read-only observability dashboard (Streamlit on localhost:8501)
+# Local read-only observability dashboard (Streamlit on localhost:8501).
+# Open ?attempt_id=<id> for per-attempt drill-down; "Live activity" tab
+# auto-refreshes every 2s during a run.
 streamlit run chartbreaker/observability/dashboard.py
 ```
 
@@ -77,7 +78,10 @@ A single live run writes to:
 
 - `observability/runs.sqlite` — canonical state store (8 tables, per [`docs/PROJECT_STRATEGY.md`](docs/PROJECT_STRATEGY.md) § Logging and State Store Requirement)
 - `observability/traces.jsonl` — append-only event log; `tail -f | jq` for live debugging
-- `evals/results/YYYY-MM-DD-HH-MM-SS.yaml` — per-run YAML snapshot for submission artifacts
+- `observability/run-<run_id>.log` — verbose Python log capture (when `--log-file` is set)
+- `observability/llm-trace-<run_id>.jsonl` — full LLM request + response per `chat()` call (when `--trace-llm-io` is set)
+
+See [`docs/OBSERVABILITY.md`](docs/OBSERVABILITY.md) for the full guide to the four signal layers (stdout, Python logs, SQLite+JSONL store, Streamlit dashboard) and how to investigate a specific failing attempt.
 
 ## Architectural commitments
 
@@ -91,7 +95,29 @@ Full agent roster + interaction diagram in [`docs/ARCHITECTURE.md`](docs/ARCHITE
 
 ## Status
 
-Pre-MVP. Phase 1 implementation in progress per [`docs/BUILD_PLAN.md`](docs/BUILD_PLAN.md). See [`docs/PROJECT_STRATEGY.md`](docs/PROJECT_STRATEGY.md) § Refreshed Immediate Gaps for the current ticket list.
+**Final-ready.** Phase 1 (MVP), Phase 2 (rubric-critical specialists + dashboard), and Phase 2.5 (observability expansion) complete. See [`docs/BUILD_PLAN.md`](docs/BUILD_PLAN.md) for full ticket history.
+
+Coverage: 14 attack subcategories across 6 categories (Prompt Injection / Exfiltration / State Corruption / Tool Misuse / DoS / Identity). 7 specialists wired (4 LLM: Injector, Conversationalist, Smuggler, Impersonator-folded-into-Injector; 3 deterministic: Saboteur, Cracker, Glutton-deferred). Judge: deterministic verifier-replay + semantic gpt-5.4-nano with a calibration runner.
+
+## Submission artifacts
+
+| What | Where |
+|---|---|
+| Vulnerability reports (3) | [`reports/AF-001-indirect-injection-partial-dob-leak.md`](reports/AF-001-indirect-injection-partial-dob-leak.md), [`reports/AF-002-user-question-cap-not-enforced.md`](reports/AF-002-user-question-cap-not-enforced.md), [`reports/AF-003-session-cookie-missing-httponly.md`](reports/AF-003-session-cookie-missing-httponly.md) |
+| AI cost analysis | [`COST_ANALYSIS.md`](COST_ANALYSIS.md) — actual dev spend + projections at 100 / 1K / 10K / 100K |
+| Observability guide | [`docs/OBSERVABILITY.md`](docs/OBSERVABILITY.md) |
+| CI-produced `runs.sqlite` | GitHub release tag `nightly` (automated via [`.github/workflows/regression-sweep.yml`](.github/workflows/regression-sweep.yml)) |
+| Demo video (3–5 min) | _TBD — recording in progress; script in [`docs/SUBMISSION_DRAFTS.md`](docs/SUBMISSION_DRAFTS.md)_ |
+| Social post (X / LinkedIn @GauntletAI) | _TBD — draft text in [`docs/SUBMISSION_DRAFTS.md`](docs/SUBMISSION_DRAFTS.md)_ |
+
+## Observability
+
+Four signal layers — see [`docs/OBSERVABILITY.md`](docs/OBSERVABILITY.md) for the full guide.
+
+- **Stdout** — one-line summaries per attempt + verdict as the run progresses.
+- **Python logs** — `--log-file` tees DEBUG-level logs to `observability/run-<run_id>.log`.
+- **SQLite + JSONL store** — `observability/runs.sqlite` (8 tables) + `traces.jsonl` mirror; full per-LLM-call payloads when `--trace-llm-io` is on.
+- **Streamlit dashboard** — `streamlit run chartbreaker/observability/dashboard.py` → `localhost:8501`. Includes a per-attempt drill-down (click any `attempt_id`), a 📡 Live activity tab that auto-refreshes every 2s during a run, sidebar rationale search, expandable agent-event timeline.
 
 ## License
 
