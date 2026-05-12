@@ -38,11 +38,11 @@
 - **Non-goals affecting implementation** (`PROJECT_STRATEGY.md` § Non-Goals): no SIEM/WAF/HIDS, no auto-remediation, no multi-target campaigns, no multi-tenant SaaS, no control GUI (read-only dashboard only), no live PHI (synthetic fixture patients only).
 
 ## Current Status
-- **Overall status:** Phase 1 — MVP Floor **complete** (15/16). Phase 2 rubric-critical subset (T8, T7, T1, T2, T4, T5, T11) **complete**. **Phase 2.5 complete** (all 6 tickets). **Phase 3 complete** — vuln reports (3), cost analysis, CI workflow, README final pass, social draft, demo video all in. **Phase 4 complete** — Orchestrator Approval Harness (P4-T1 through P4-T6) shipped end-to-end: schema_version v3, harness module, Streamlit "Plan Next Run" tab, doc updates, 26 new tests (139 passing in .venv), CLI subcommand. Deferred Phase-2 tickets (T3 Glutton, T9 Scribe+redactor, T10 cross-cat regression, T12 narration, T6 Impersonator) remain out of scope.
-- **Current phase:** Submission-ready + Phase 4 additive feature shipped
+- **Overall status:** Phase 1 — MVP Floor **complete** (15/16). Phase 2 rubric-critical subset (T8, T7, T1, T2, T4, T5, T11) **complete**. **Phase 2.5 complete** (all 6 tickets). **Phase 3 complete** — vuln reports (3), cost analysis, CI workflow, README final pass, social draft, demo video all in. **Phase 4 complete** — Orchestrator Approval Harness (P4-T1 through P4-T6) shipped end-to-end: schema_version v3, harness module, Streamlit "Plan Next Run" tab, doc updates, 26 new tests (139 passing in .venv), CLI subcommand. **Phase 5 spec'd, not started** — Platform Self-Tests (audit-run, calibration growth, regression CI gate) defined in [`docs/specs/phase5-platform-self-tests.md`](./specs/phase5-platform-self-tests.md). Deferred Phase-2 tickets (T3 Glutton, T9 Scribe+redactor, T10 cross-cat regression, T12 narration, T6 Impersonator) remain out of scope.
+- **Current phase:** Submission-ready + Phase 4 additive feature shipped; Phase 5 spec'd
 - **Current ticket:** none active
 - **Blockers:** None
-- **Last updated:** 2026-05-12 after Phase 4 completion (orchestrator approval harness)
+- **Last updated:** 2026-05-12 after Phase 5 spec authored
 
 ---
 
@@ -450,6 +450,52 @@ Add a human-in-the-loop approval queue on top of the autonomous Orchestrator. Af
   - Depends on: P4-T2
   - Acceptance criteria covered: none mandatory; nice-to-have for non-Streamlit operators and CI.
   - Status: Complete — shipped under the 30 LOC ceiling. `chartbreaker propose [--n N] [--json] [--verbose]` subparser + matching branch in `main()` call `proposal_harness.propose(store, n=args.n)` and emit either a per-row text listing or a JSON dump (via `dataclasses.asdict`). No effect on `run-mvp-loop` / `regress` / `calibrate`.
+
+---
+
+### Phase 5 — Platform Self-Tests (deadline: post-Final; additive feature)
+
+**Goal**
+Answer Phase 3 of the assignment ("trust & safety for the platform itself" + "testing the tester") by shipping three additive, mutually-independent capabilities: a `chartbreaker audit-run` post-run audit CLI that flags safety / signal-quality anomalies, growth of the Judge calibration set to ≥50 records with hard negatives and per-subcategory accuracy reporting, and a CI-grade `chartbreaker regress --strict` regression gate wired to a nightly + per-PR GitHub Action. **Source spec:** [`docs/specs/phase5-platform-self-tests.md`](./specs/phase5-platform-self-tests.md). All three tickets are additive (no schema changes, no behavior changes to existing commands), can be built in parallel, and degrade gracefully if skipped.
+
+**Exit Criteria**
+- New CLI subcommand `chartbreaker audit-run [<run_id> | --all] [--json]` exists and implements the six audit checks defined in the spec (ACL breach, budget overrun, agent looping, verdict-disagreement spike, all-pass / all-fail, severity inversion). Exit codes: 0 clean / 1 findings / 2 usage error.
+- `evals/judge_calibration.yaml` contains ≥50 records spanning ≥10 subcategories with ≥10 explicit hard-negative records.
+- `chartbreaker calibrate` reports per-subcategory accuracy in addition to the existing aggregate; sub-70% buckets are flagged inline; aggregate halt threshold preserved.
+- `chartbreaker regress` accepts `--strict`, `--json`, and `--require-target-healthcheck` flags; exits non-zero on any regressed/drifted case; default stdout remains backward-compatible plus one new summary line.
+- `.github/workflows/regression.yml` runs the regression sweep on every PR to `main` and nightly; gracefully skips on forks without target credentials.
+- `docs/OBSERVABILITY.md`, `docs/ARCHITECTURE.md`, `docs/PROJECT_STRATEGY.md` updated per spec § Step 7.
+- Existing 139-test suite stays green; ~20 new tests added across audit / calibration / regression modules.
+
+**Tickets**
+
+- **P5-T1 — `chartbreaker audit-run` CLI + audit module**
+  - Objective: New module `chartbreaker/audit.py` exposing `AuditFinding` / `AuditReport` dataclasses and six pure check functions (`(store, run_id) -> list[AuditFinding]`) plus `audit_run(run_id, store) -> AuditReport`. Each check reads `runs.sqlite` only — no writes, no network. New `audit-run` subparser in `chartbreaker/cli.py` with positional `run_id`, `--all`, `--json` flags. CLI exit-code contract: 0 clean, 1 findings, 2 usage error. Clean run prints exactly `OK — N checks passed`. Six checks per spec § AC-1.4: ACL breach probe (pid ∉ FIXTURE_PIDS in any attempt), budget overrun (sum costs > `BUDGETS.per_run_usd`), agent looping (≥10 attempts on same triple), verdict disagreement spike (>30% verifier↔semantic mismatch), all-pass / all-fail run (homogeneous verdicts with attempt count ≥6), severity inversion (critical + verifier_replay=pass + templated rationale).
+  - Files likely involved: `chartbreaker/audit.py` *(new)*, `chartbreaker/cli.py`, `chartbreaker/tests/test_audit.py` *(new)*
+  - Depends on: P1-T7 (observability store), P1-T13 (Judge), P2-T7 (calibration patterns to mirror)
+  - Acceptance criteria covered: spec AC-1.1 through AC-1.6.
+  - Status: Not started.
+
+- **P5-T2 — Calibration set growth + per-subcategory reporting**
+  - Objective: Grow `evals/judge_calibration.yaml` from 6 → ≥50 records spanning ≥10 subcategories with ≥10 `kind: hard_negative` records (responses with risky-sounding language but actually compliant — Judge must grade `pass`). Add ≥5 `partial` records to exercise the three-way classifier. Bump `metadata.total_records` to actual count. Extend `chartbreaker/calibration.py` `CalibrationReport` dataclass with `per_subcategory_accuracy: dict[str, tuple[int, int, float]]` and `below_threshold_subcategories(threshold=0.70) -> list[str]`. Extend `print_report` with a per-subcategory table. Preserve existing aggregate thresholds (≥85% / 70-85% / <70%) and exit-code contract — per-subcategory reporting is informational at the CLI layer, doesn't change halt behavior.
+  - Files likely involved: `evals/judge_calibration.yaml`, `chartbreaker/calibration.py`, `chartbreaker/tests/test_calibration.py` *(new or extend)*
+  - Depends on: P2-T7 (Judge calibration runner) — no code dependency on P5-T1 or P5-T3.
+  - Acceptance criteria covered: spec AC-2.1 through AC-2.6.
+  - Status: Not started.
+
+- **P5-T3 — `chartbreaker regress` CI gate**
+  - Objective: Add `--strict`, `--json`, `--require-target-healthcheck` flags to the existing `regress` subparser. `--strict` causes exit 1 on any case classified `regressed` or `drifted` by `regression.classify_replay`. `--json` emits `{run_id, cases: [...], summary: {passed, regressed, drifted, error}}` on stdout. Default stdout output is byte-identical to today's plus a single new summary line. `--require-target-healthcheck` probes `TARGET_BASE_URL` before the sweep and short-circuits with exit 0 + warning if unreachable (distinguishes outage from regression in CI). New `.github/workflows/regression.yml` triggers on `pull_request` to `main` and nightly cron `0 7 * * *`; calls `chartbreaker regress --strict --json --require-target-healthcheck`; uploads JSON as artifact; uses `if: ${{ secrets.CHARTBREAKER_TARGET_USER != '' }}` so forks silently skip.
+  - Files likely involved: `chartbreaker/regression.py`, `chartbreaker/cli.py`, `.github/workflows/regression.yml` *(new)*, `chartbreaker/tests/test_regression.py` *(new or extend)*
+  - Depends on: P1-T16 (regression module), P2-T7 (calibration thresholds — same pattern reused) — no code dependency on P5-T1 or P5-T2.
+  - Acceptance criteria covered: spec AC-3.1 through AC-3.6.
+  - Status: Not started.
+
+- **P5-T4 — Doc updates**
+  - Objective: Add § Audit findings to `docs/OBSERVABILITY.md` naming the six checks, the CLI command, and the not-yet-persisted posture. Add one line to `docs/ARCHITECTURE.md` § Judge noting the calibration set size and per-subcategory reporting. Add one sentence to `docs/PROJECT_STRATEGY.md` § Release & Change Management describing the regression CI gate. No other doc edits.
+  - Files likely involved: `docs/OBSERVABILITY.md`, `docs/ARCHITECTURE.md`, `docs/PROJECT_STRATEGY.md`
+  - Depends on: P5-T1, P5-T2, P5-T3 (so doc wording matches shipped commands).
+  - Acceptance criteria covered: spec § Step 7.
+  - Status: Not started.
 
 ---
 
