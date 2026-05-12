@@ -32,9 +32,9 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent
 _DOTENV_PATH = _REPO_ROOT / ".env"
 load_dotenv(_DOTENV_PATH)
 
-from chartbreaker import config, regression  # noqa: E402  (after load_dotenv)
+from chartbreaker import calibration, config, regression  # noqa: E402  (after load_dotenv)
 from chartbreaker.agents import orchestrator_agent, red_team_lead
-from chartbreaker.agents.judge_agent import judge
+from chartbreaker.agents.judge_agent import judge, judge_with_semantic
 from chartbreaker.observability.store import ObservabilityStore
 from chartbreaker.state import AttackAttempt, CampaignBrief, CostObservation
 from chartbreaker.target_client import TargetClient
@@ -72,6 +72,8 @@ async def _run_one_brief(
     run_id: str,
     target: TargetClient,
     store: ObservabilityStore,
+    *,
+    enable_semantic_judge: bool = False,
 ) -> None:
     """Execute one CampaignBrief end-to-end: route → dispatch → judge → record."""
     store.write_campaign(run_id, brief)
@@ -103,12 +105,23 @@ async def _run_one_brief(
     response = await target.dispatch(attempt)
     store.write_target_response(run_id, response)
 
-    verdict = judge(
-        attempt,
-        response,
-        allowed_source_ids=[],  # Judge falls back to body["context"] source IDs
-        expected_pid=config.FIXTURE_PIDS[0],
-    )
+    if enable_semantic_judge:
+        verdict, judge_cost = await judge_with_semantic(
+            attempt,
+            response,
+            allowed_source_ids=[],
+            expected_pid=config.FIXTURE_PIDS[0],
+            enable_semantic=True,
+        )
+        if judge_cost is not None:
+            store.write_cost(run_id, judge_cost)
+    else:
+        verdict = judge(
+            attempt,
+            response,
+            allowed_source_ids=[],  # Judge falls back to body["context"] source IDs
+            expected_pid=config.FIXTURE_PIDS[0],
+        )
     store.write_verdict(run_id, verdict)
     _print_verdict_line(f"{specialist}-cat-{brief.subcategory_id}", verdict)
 
@@ -166,7 +179,7 @@ async def _run_cat_5a_probe(
         print(f"    pinned to regression suite as {case['id']}")
 
 
-async def run_mvp_loop(operator: str) -> str:
+async def run_mvp_loop(operator: str, enable_semantic_judge: bool = False) -> str:
     """Execute the rubric MVP hard-gate loop. Returns the run_id."""
     run_id = str(uuid4())
     cli_command = " ".join(sys.argv)
@@ -175,6 +188,7 @@ async def run_mvp_loop(operator: str) -> str:
     print(f"  target:   {config.TARGET_BASE_URL}")
     print(f"  run_id:   {run_id}")
     print(f"  operator: {operator}")
+    print(f"  semantic judge: {'on' if enable_semantic_judge else 'off'}")
 
     with ObservabilityStore() as store:
         store.start_run(run_id, cli_command=cli_command, operator=operator)
@@ -183,7 +197,13 @@ async def run_mvp_loop(operator: str) -> str:
                 # Orchestrator decides the campaign sequence by priority.
                 # RedTeamLead routes each brief to the right specialist.
                 for brief in orchestrator_agent.plan_initial_briefs():
-                    await _run_one_brief(brief, run_id, target, store)
+                    await _run_one_brief(
+                        brief,
+                        run_id,
+                        target,
+                        store,
+                        enable_semantic_judge=enable_semantic_judge,
+                    )
                 # Cat 5a is dispatched out-of-band — no Phase-1 specialist owns
                 # token-exhaustion (Glutton lands in Phase 2). It still counts
                 # as a sixth distinct attack category for the rubric.
@@ -269,6 +289,11 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Enable DEBUG-level logging.",
     )
+    mvp.add_argument(
+        "--semantic-judge",
+        action="store_true",
+        help="Enable the Phase-2 semantic LLM Judge on top of verifier replay.",
+    )
 
     regress = sub.add_parser(
         "regress",
@@ -279,6 +304,12 @@ def _build_parser() -> argparse.ArgumentParser:
         default=f"laptop:{getpass.getuser()}",
     )
     regress.add_argument("--verbose", action="store_true")
+
+    calibrate = sub.add_parser(
+        "calibrate",
+        help="Replay evals/judge_calibration.yaml against the semantic Judge.",
+    )
+    calibrate.add_argument("--verbose", action="store_true")
 
     return parser
 
@@ -293,9 +324,35 @@ def main() -> None:
     )
 
     if args.cmd == "run-mvp-loop":
-        asyncio.run(run_mvp_loop(operator=args.operator))
+        asyncio.run(
+            run_mvp_loop(
+                operator=args.operator,
+                enable_semantic_judge=getattr(args, "semantic_judge", False),
+            )
+        )
     elif args.cmd == "regress":
         asyncio.run(run_regression_sweep(operator=args.operator))
+    elif args.cmd == "calibrate":
+        summary = asyncio.run(calibration.run_calibration())
+        print(f"\nJudge calibration: {summary.matched}/{summary.total} = {summary.accuracy:.2%}")
+        for result in summary.results:
+            mark = "OK " if result.matched else "MISS"
+            print(
+                f"  {mark} {result.record_id} expected={result.expected_semantic:<8} "
+                f"got={result.actual_semantic:<8} ({result.rationale})"
+            )
+        print(f"\nThreshold action: {summary.threshold_action.upper()}")
+        if summary.is_halt:
+            print(
+                f"  Accuracy below halt threshold ({calibration.HALT_THRESHOLD:.0%}). "
+                f"Judge model is unfit; bump model or re-tune prompt."
+            )
+            sys.exit(2)
+        if not summary.is_pass:
+            print(
+                f"  Accuracy below warn threshold ({calibration.WARN_THRESHOLD:.0%}). "
+                f"Judge is drifting; investigate before next run."
+            )
 
 
 if __name__ == "__main__":

@@ -40,9 +40,9 @@
 ## Current Status
 - **Overall status:** Phase 1 — MVP Floor **complete** (15 of 16 tickets done, P1-T15 LangGraph deferred to Phase 2 with rationale). MVP rubric hard gate met with live evidence across 6 attack categories. Phase 2 in progress (rubric-critical subset T8 → T7 → T1 → T2 → T4 → T5 → T11).
 - **Current phase:** Phase 2 — MVP-to-Final
-- **Current ticket:** P2-T7 (Judge semantic LLM verdict + calibration)
+- **Current ticket:** P2-T1 (Conversationalist specialist)
 - **Blockers:** None
-- **Last updated:** 2026-05-11 after P2-T8 completion
+- **Last updated:** 2026-05-11 after P2-T7 completion
 
 ---
 
@@ -234,10 +234,10 @@ Layer in the components `ARCHITECTURE.md` § MVP vs Final Cut marks as Final-onl
 
 - **P2-T7 — Judge semantic LLM verdict + calibration**
   - Objective: Add the semantic verdict half to the Judge (Claude / OpenAI per registry). Build `evals/judge_calibration.yaml` of known-good / known-bad fixtures. `tests/test_judge_calibration.py` halts platform if accuracy drops below 70% threshold; warns below 85%.
-  - Files likely involved: `chartbreaker/agents/judge_agent.py`, `evals/judge_calibration.yaml`, `chartbreaker/tests/test_judge_calibration.py`
+  - Files likely involved: `chartbreaker/agents/judge_agent.py`, `chartbreaker/calibration.py`, `chartbreaker/cli.py`, `chartbreaker/tests/test_judge_semantic.py`, `chartbreaker/tests/test_judge_calibration.py`
   - Depends on: P1-T9
   - Acceptance criteria covered: `ARCHITECTURE.md` § Judge Agent (semantic verdict); `PROJECT_STRATEGY.md` § Success Criteria § Final "Judge calibration accuracy" row
-  - Status: Todo
+  - Status: Complete — `judge_with_semantic()` (async) layers an OpenAI gpt-5.4-nano verdict on top of the deterministic Phase-1 Judge with isolation enforced (no specialist reasoning in the prompt). Calibration runner (`chartbreaker calibrate`) replays `evals/judge_calibration.yaml`; thresholds 0.85 warn / 0.70 halt. Disagreement between semantic and verifier_replay promotes to regression. `run-mvp-loop --semantic-judge` opts the loop in. 6 unit tests cover parse / disagreement / fall-back; 1 live calibration test skipped without `CHARTBREAKER_RUN_CALIBRATION=1`.
 
 - **P2-T8 — Target Client vision-extraction + login-probe endpoints**
   - Objective: Extend `target_client.py` to support `POST /run-extraction.php` (vision extraction, Saboteur Cat 4a) and the login surface variants used by Cracker Cat 6d/6e beyond routine session establishment.
