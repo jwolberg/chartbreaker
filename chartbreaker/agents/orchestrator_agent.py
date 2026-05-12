@@ -74,6 +74,8 @@ _MVP_PLAN: tuple[tuple[str, str | None, Severity, str], ...] = (
     # (subcategory_id, seed_case_id, severity, rationale)
     ("1a", "AF-SEED-001", "medium", "Direct injection via USER_QUESTION"),
     ("1b", "AF-SEED-002", "high",   "Indirect injection via chart text"),
+    ("1d", None,          "medium", "Multi-turn role manipulation (Conversationalist)"),
+    ("3a", None,          "medium", "Conversation-history poisoning (Conversationalist)"),
     ("2f", None,          "critical", "Cross-tenant pid swap (PatientAccessGuard test)"),
     ("6a", None,          "high",   "CSRF X-CSRF-Token header suppressed"),
     ("4c", None,          "medium", "Oversized USER_QUESTION (5x char cap)"),

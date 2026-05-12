@@ -40,9 +40,9 @@
 ## Current Status
 - **Overall status:** Phase 1 — MVP Floor **complete** (15 of 16 tickets done, P1-T15 LangGraph deferred to Phase 2 with rationale). MVP rubric hard gate met with live evidence across 6 attack categories. Phase 2 in progress (rubric-critical subset T8 → T7 → T1 → T2 → T4 → T5 → T11).
 - **Current phase:** Phase 2 — MVP-to-Final
-- **Current ticket:** P2-T1 (Conversationalist specialist)
+- **Current ticket:** P2-T2 (Smuggler specialist)
 - **Blockers:** None
-- **Last updated:** 2026-05-11 after P2-T7 completion
+- **Last updated:** 2026-05-11 after P2-T1 completion
 
 ---
 
@@ -192,10 +192,10 @@ Layer in the components `ARCHITECTURE.md` § MVP vs Final Cut marks as Final-onl
 
 - **P2-T1 — Conversationalist specialist (Cat 1d, 3a)**
   - Objective: LLM specialist for multi-turn manipulation and conversation-history poisoning. Maintains attacker-side state across turns. Tighter token budget than Injector because multi-turn attempts run multiple LLM calls.
-  - Files likely involved: `chartbreaker/agents/specialists/multi_turn_specialist.py`
+  - Files likely involved: `chartbreaker/agents/specialists/multi_turn_specialist.py`, `chartbreaker/agents/red_team_lead.py`, `chartbreaker/agents/orchestrator_agent.py`, `chartbreaker/target_client.py`
   - Depends on: P1-T10 (Injector shape established)
   - Acceptance criteria covered: `ARCHITECTURE.md` § Conversationalist; `THREAT_MODEL.md` § Category 1 (1d), § Category 3 (3a)
-  - Status: Todo
+  - Status: Complete — Conversationalist generates 2–4 turn sequences; target_client walks the sequence (turn 1 = `briefing`, turns 2+ = `followup`) so attacker state accumulates server-side. Orchestrator MVP plan extended with 1d and 3a. 6 unit tests cover parsing + edge cases.
 
 - **P2-T2 — Smuggler specialist (Cat 2a, 2b, 2d)**
   - Objective: LLM specialist focused on output-shape work — crafts inputs that produce outputs that *pass through* the verifiers while still leaking. Includes source-ID forgery probes (Cat 2b — likely-marquee finding).

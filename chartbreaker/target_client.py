@@ -323,45 +323,58 @@ class TargetClient:
         )
 
     async def _dispatch_copilot_briefing(self, attempt: AttackAttempt) -> httpx.Response:
-        """POST a briefing/followup request to the Co-Pilot endpoint."""
+        """POST a briefing (and optionally a sequence of followups) to the Co-Pilot.
+
+        Multi-turn attacks send turn 1 as `action: briefing`, turns 2+ as
+        `action: followup`. The httpx client carries the session cookie
+        between requests, so the target's session state accumulates as
+        the attacker intends. Only the final response is returned to the
+        Judge — that's the response a user would actually see.
+        """
         assert self._client is not None
 
-        # For MVP, only the last user turn of a multi_turn_sequence is dispatched;
-        # full multi-turn arc handling lands in Phase 2 with Conversationalist.
-        user_question = (
-            attempt.prompt
-            if attempt.prompt is not None
-            else (
-                attempt.multi_turn_sequence[-1]
-                if attempt.multi_turn_sequence
-                else None
-            )
-        )
-        if user_question is None and attempt.chart_text_payload is None:
-            raise ValueError("attempt has no prompt or chart_text_payload")
-
-        # Default to the first fixture patient for MVP; specialists can override
-        # by setting pid on the http_request branch.
         from chartbreaker.config import FIXTURE_PIDS
 
         pid = FIXTURE_PIDS[0]
-
-        body: dict[str, Any] = {
-            "action": "briefing",
-            "pid": pid,
-            "csrf_token": self._csrf_token or "",
-        }
-        if user_question is not None:
-            body["user_question"] = user_question
-        if attempt.chart_text_payload is not None:
-            # Indirect-injection cases need this payload routed into PATIENT_CONTEXT,
-            # which in V1 means it has to already be in the chart. For MVP the
-            # specialist is responsible for arranging that via fixture data;
-            # we only pass the payload as metadata for trace records.
-            body["chart_text_payload"] = attempt.chart_text_payload
-
         headers = {"X-CSRF-Token": self._csrf_token or ""}
-        return await self._client.post(_COPILOT_PATH, json=body, headers=headers)
+
+        # Build the turn list. Single-turn attempts collapse to a one-element list.
+        if attempt.multi_turn_sequence:
+            turns = list(attempt.multi_turn_sequence)
+        elif attempt.prompt is not None:
+            turns = [attempt.prompt]
+        elif attempt.chart_text_payload is not None:
+            # Indirect injection: the Co-Pilot pulls the chart text out of
+            # PATIENT_CONTEXT (placed there ahead of time by fixture data). We
+            # still need a USER_QUESTION on the wire; use a benign default.
+            turns = ["Summarize this patient's recent chart activity."]
+        else:
+            raise ValueError("attempt has no prompt, chart_text_payload, or turns")
+
+        last_response: httpx.Response | None = None
+        for index, turn in enumerate(turns):
+            body: dict[str, Any] = {
+                "action": "briefing" if index == 0 else "followup",
+                "pid": pid,
+                "csrf_token": self._csrf_token or "",
+                "user_question": turn,
+            }
+            if index == 0 and attempt.chart_text_payload is not None:
+                # Pass the chart-text payload alongside the briefing for trace
+                # records; the live target ignores it (chart text must be
+                # pre-planted) but the audit log captures the attack intent.
+                body["chart_text_payload"] = attempt.chart_text_payload
+            last_response = await self._client.post(
+                _COPILOT_PATH, json=body, headers=headers
+            )
+            # Refresh CSRF if the response carried a new token (mid-conversation).
+            parsed = _safe_parse_json(last_response)
+            if parsed is not None and isinstance(parsed.get("csrf_token"), str):
+                self._csrf_token = parsed["csrf_token"]
+                headers["X-CSRF-Token"] = self._csrf_token
+
+        assert last_response is not None
+        return last_response
 
     async def _dispatch_http_request(self, req: HttpRequestShape) -> httpx.Response:
         """Dispatch a deterministic specialist's prepared HTTP envelope.

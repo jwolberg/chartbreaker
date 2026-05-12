@@ -16,6 +16,7 @@ from typing import Literal
 from chartbreaker import evals_loader
 from chartbreaker.agents.specialists import (
     injection_specialist,
+    multi_turn_specialist,
     protocol_specialist,
     tool_misuse_specialist,
 )
@@ -39,6 +40,9 @@ _ROUTING_TABLE: dict[str, tuple[SpecialistName, bool]] = {
     # Injector covers most of Category 1 + the chart-text variant of 3e
     "1a": ("injector", True),
     "1b": ("injector", True),
+    # Conversationalist covers multi-turn manipulation + history poisoning
+    "1d": ("conversationalist", False),
+    "3a": ("conversationalist", False),
     # Cracker covers cross-tenant + CSRF
     "2f": ("cracker", False),
     "6a": ("cracker", False),
@@ -86,10 +90,14 @@ async def dispatch(
         attempt, cost = await injection_specialist.generate(brief, seed)
         return attempt, cost
 
+    if specialist == "conversationalist":
+        attempt, cost = await multi_turn_specialist.generate(brief)
+        return attempt, cost
+
     if specialist == "cracker":
         return protocol_specialist.generate(brief), None
 
     if specialist == "saboteur":
         return tool_misuse_specialist.generate(brief), None
 
-    raise ValueError(f"Specialist {specialist!r} is not yet wired in Phase 1")
+    raise ValueError(f"Specialist {specialist!r} is not yet wired")
