@@ -30,7 +30,18 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import sys
 from pathlib import Path
+
+# Streamlit launches this script with `chartbreaker/observability/` on
+# sys.path (the script's own directory), NOT the repo root. That makes
+# `from chartbreaker.config import ...` fail with ModuleNotFoundError
+# regardless of CWD. Inject the repo root so the import resolves
+# whether you run `streamlit run chartbreaker/observability/dashboard.py`
+# from the repo root or from anywhere else.
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
 
 import pandas as pd
 import streamlit as st
