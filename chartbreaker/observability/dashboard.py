@@ -256,7 +256,7 @@ makes is captured in the observability store this dashboard reads from.
   Python logs, SQLite + JSONL store, this dashboard).
 """
         )
-    with st.expander("📖 Subcategory legend (what does '1b' mean?)", expanded=False):
+    with st.expander("📖 Attack Vector ↔ sub-category ID mapping", expanded=False):
         # Render the subcategory glossary as a dataframe so it's searchable.
         legend = pd.DataFrame(
             [{"subcategory": k, "description": v} for k, v in SUBCATEGORY_LABEL.items()]
@@ -403,8 +403,8 @@ def _render_coverage(attempts: pd.DataFrame) -> None:
     )
     st.caption(
         "Bars are labeled with subcategory IDs (1a, 1b, 2f, …). Open the "
-        "**Subcategory legend** expander above for the full description "
-        "of each ID."
+        "**Attack Vector ↔ sub-category ID mapping** expander above for "
+        "the full description of each ID."
     )
     if _empty_state_check(attempts, "attempts"):
         return
@@ -537,7 +537,7 @@ def _render_open_vulns(verdicts: pd.DataFrame, attempts: pd.DataFrame) -> None:
             ),
             "subcategory_id": st.column_config.TextColumn(
                 "Subcat",
-                help="Threat-model subcategory ID. See the Subcategory legend expander above for full names.",
+                help="Threat-model subcategory ID. See the Attack Vector ↔ sub-category ID mapping expander above for full names.",
                 width="small",
             ),
             "attack vector": st.column_config.TextColumn(
@@ -1104,14 +1104,15 @@ def main() -> None:
         _render_summary_cards(attempts, verdicts, costs)
 
         # Top of the page: the answers the operator is here for —
-        # "what's broken?" (open vulns) and "what did it cost?" (costs).
+        # "what's broken?" (open vulns), "what did it cost?" (costs),
+        # "how serious are the findings?" (severity).
         _render_open_vulns(verdicts_searched, attempts)
         _render_costs(costs)
+        _render_severity(verdicts_searched)
 
         # Followed by the aggregate "how the run shaped up" panels.
         _render_coverage(attempts)
         _render_verdict_breakdown(verdicts_searched)
-        _render_severity(verdicts_searched)
         _render_agent_timeline(events_all, run_id)
 
         with st.expander("Raw runs table"):
