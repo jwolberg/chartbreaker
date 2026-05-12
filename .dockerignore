@@ -1,0 +1,38 @@
+# Keep the Cloud Run image small and avoid leaking local state.
+
+.git
+.github
+.venv
+venv
+__pycache__
+**/__pycache__
+*.pyc
+*.pyo
+.pytest_cache
+.mypy_cache
+.ruff_cache
+
+# Local secrets — never bake into the image. Cloud Run config comes from
+# --set-env-vars / Secret Manager (see deploy instructions in README).
+.env
+.env.*
+!.env.example
+
+# Local-only artifacts.
+reports/
+docs/
+evals/
+*.log
+observability/*.log
+observability/*.jsonl
+observability/dashboard-launches.log
+
+# Editor / OS noise.
+.DS_Store
+.idea
+.vscode
+*.swp
+
+# Everything in the repo except chartbreaker/ + observability/runs.sqlite is
+# unused by the dashboard, but allow-listing is fragile (new agent files would
+# silently break) — rely on the COPY lines in the Dockerfile to scope.

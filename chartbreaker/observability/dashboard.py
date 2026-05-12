@@ -448,7 +448,20 @@ def _render_run_test_control(db_path: str) -> None:
     Per docs/PROJECT_STRATEGY.md § Operating Model § Hosting Topology,
     the dashboard is local-only by design — this button only exists
     when the operator is running Streamlit on their own machine.
+
+    Set ``CHARTBREAKER_DASHBOARD_READ_ONLY=1`` (e.g. on Cloud Run) to
+    hide the launcher entirely. Cloud Run containers are request-scoped
+    and ephemeral, so a subprocess-launched CLI cannot survive there.
     """
+    if os.environ.get("CHARTBREAKER_DASHBOARD_READ_ONLY", "").lower() in ("1", "true", "yes"):
+        st.sidebar.header("🚀 Run test")
+        st.sidebar.info(
+            "Read-only deployment — the run launcher is disabled here. "
+            "Use the local dashboard (`streamlit run "
+            "chartbreaker/observability/dashboard.py`) to start a new run."
+        )
+        return
+
     st.sidebar.header("🚀 Run test")
 
     in_flight = _detect_in_flight_run(db_path)
@@ -534,24 +547,45 @@ def _render_run_test_control(db_path: str) -> None:
 
 
 def _render_run_picker(runs_df: pd.DataFrame) -> str | None:
-    """Sidebar run picker. Returns the selected run_id or 'ALL'."""
+    """Sidebar run picker. Returns the selected run_id or 'ALL'.
+
+    Defaults to the most recent run (runs_df is loaded ORDER BY started_at
+    DESC). The current selection is mirrored into ``?run_id=`` so the Live
+    tab's HTML meta-refresh — which is a full page reload, not a Streamlit
+    rerun — restores the same run instead of bouncing back to the default.
+    """
     st.sidebar.header("Filters")
     if runs_df.empty:
         return None
-    label_map: dict[str, str] = {"ALL": "All runs"}
+    # Latest run first (default), "All runs" as the trailing meta-option.
+    label_map: dict[str, str] = {}
     for _, row in runs_df.iterrows():
         label = f"{row['started_at'][:19]} — {row['operator']}"
         label_map[row["run_id"]] = label
+    label_map["ALL"] = "All runs"
+    options = list(label_map.keys())
+
+    qp_value = st.query_params.get("run_id")
+    default_index = options.index(qp_value) if qp_value in options else 0
+
     choice = st.sidebar.selectbox(
         "Run",
-        options=list(label_map.keys()),
+        options=options,
+        index=default_index,
         format_func=lambda rid: label_map[rid],
+        key="run_picker_selection",
         help=(
             "Each run is one `chartbreaker run-mvp-loop` invocation (or a CI "
-            "sweep). Pick a single run to focus the dashboard on it, or "
-            "`All runs` to see aggregate history."
+            "sweep). Defaults to the most recent run; pick a different one to "
+            "focus the dashboard on it, or `All runs` for aggregate history."
         ),
     )
+
+    # Mirror selection into the URL so meta-refresh page reloads (and shared
+    # links) restore the same run. Skip the assignment when already in sync
+    # to avoid an unnecessary rerun.
+    if st.query_params.get("run_id") != choice:
+        st.query_params["run_id"] = choice
     return choice
 
 
