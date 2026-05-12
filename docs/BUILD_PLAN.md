@@ -40,9 +40,9 @@
 ## Current Status
 - **Overall status:** Phase 1 — MVP Floor **complete** (15 of 16 tickets done, P1-T15 LangGraph deferred to Phase 2 with rationale). MVP rubric hard gate met with live evidence across 6 attack categories. Phase 2 in progress (rubric-critical subset T8 → T7 → T1 → T2 → T4 → T5 → T11).
 - **Current phase:** Phase 2 — MVP-to-Final
-- **Current ticket:** P2-T5 (Cracker full Cat 6)
+- **Current ticket:** P2-T11 (Streamlit dashboard)
 - **Blockers:** None
-- **Last updated:** 2026-05-11 after P2-T4 completion
+- **Last updated:** 2026-05-11 after P2-T5 completion
 
 ---
 
@@ -220,10 +220,10 @@ Layer in the components `ARCHITECTURE.md` § MVP vs Final Cut marks as Final-onl
 
 - **P2-T5 — Cracker full Cat 6 (6c BAA-gate + priv esc, 6d session fixation, 6e login brute-force)**
   - Objective: Extend Cracker beyond 2f + 6a: BAA-gate flip probe, session-fixation probe (pre-seed `PHPSESSID` before login + cookie-flag audit), login brute-force / lockout-bypass probes against `POST /interface/login/login.php`. Cracker-layer rate cap enforced to avoid locking out the test user.
-  - Files likely involved: `chartbreaker/agents/specialists/protocol_specialist.py`, `chartbreaker/target_client.py` (login endpoint surface)
+  - Files likely involved: `chartbreaker/agents/specialists/protocol_specialist.py`, `chartbreaker/agents/red_team_lead.py`, `chartbreaker/agents/orchestrator_agent.py`
   - Depends on: P1-T12, P2-T8
   - Acceptance criteria covered: `ARCHITECTURE.md` § Cracker (full coverage); `THREAT_MODEL.md` § Category 6 (6c, 6d, 6e)
-  - Status: Todo
+  - Status: Complete — 6c probe injects X-Forwarded-User / X-OpenEMR-Role / X-OpenEMR-BAA-Signed proxy headers on a normal briefing; 6d probe issues an unauthenticated GET to the login form pre-seeded with an attacker-chosen PHPSESSID cookie (TargetResponse captures Set-Cookie for the Judge to compare); 6e fires a single rate-capped bad-credential POST to the login submit endpoint. `LOGIN_PROBE_BUDGET=3` (env-overridable) protects the dedicated test user from lockout.
 
 - **P2-T6 — Impersonator specialist (Cat 6b) — optional**
   - Objective: LLM specialist for persona hijacking. Foldable into Injector's system prompt if time-constrained (per `ARCHITECTURE.md` § Impersonator — optional/foldable).

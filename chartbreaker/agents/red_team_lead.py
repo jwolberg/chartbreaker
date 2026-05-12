@@ -48,9 +48,13 @@ _ROUTING_TABLE: dict[str, tuple[SpecialistName, bool]] = {
     "2a": ("smuggler", False),
     "2b": ("smuggler", False),
     "2d": ("smuggler", False),
-    # Cracker covers cross-tenant + CSRF
+    # Cracker covers cross-tenant + CSRF + BAA-gate + session-fixation +
+    # login-brute-force (6e is rate-capped at the Cracker layer).
     "2f": ("cracker", False),
     "6a": ("cracker", False),
+    "6c": ("cracker", False),
+    "6d": ("cracker", False),
+    "6e": ("cracker", False),
     # Saboteur covers parameter tampering + vision/routing/tool-call probes
     "4a": ("saboteur", False),
     "4b": ("saboteur", False),
