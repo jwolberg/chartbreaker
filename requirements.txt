@@ -6,6 +6,9 @@ pydantic>=2.9.2,<3.0.0
 python-dotenv>=1.0.1,<2.0.0
 pyyaml>=6.0.2,<7.0.0
 
+# Dev tooling (would normally live in requirements-dev.txt; kept here for MVP simplicity)
+pytest>=9.0,<10.0
+
 # Added incrementally as later phases land:
 #   langgraph (P1-T15)
 #   streamlit (P2-T11)

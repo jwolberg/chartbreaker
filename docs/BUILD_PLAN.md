@@ -38,11 +38,11 @@
 - **Non-goals affecting implementation** (`PROJECT_STRATEGY.md` § Non-Goals): no SIEM/WAF/HIDS, no auto-remediation, no multi-target campaigns, no multi-tenant SaaS, no control GUI (read-only dashboard only), no live PHI (synthetic fixture patients only).
 
 ## Current Status
-- **Overall status:** Phase 1 — MVP Floor in progress (6 of 16 tickets complete)
+- **Overall status:** Phase 1 — MVP Floor in progress (8 of 16 tickets complete)
 - **Current phase:** Phase 1 — MVP Floor
-- **Current ticket:** P1-T7 (observability SQLite + JSONL writer)
+- **Current ticket:** P1-T9 (Judge — verifier-replay only)
 - **Blockers:** None
-- **Last updated:** 2026-05-11 after commit `d09548c`
+- **Last updated:** 2026-05-11 after commit `e430318` (P1-T8 commit pending in next push)
 
 ---
 
@@ -110,14 +110,14 @@ Every row in `PROJECT_STRATEGY.md` § Success Criteria § MVP is green:
   - Files likely involved: `chartbreaker/observability/__init__.py`, `chartbreaker/observability/schema.sql`, `chartbreaker/observability/store.py`
   - Depends on: P1-T4
   - Acceptance criteria covered: `PROJECT_STRATEGY.md` § Logging and State Store Requirement (table list); `ARCHITECTURE.md` § Observability Layer; `PROJECT_STRATEGY.md` § Operating Model § Database (schema versioning)
-  - Status: Complete (commit pending)
+  - Status: Complete (commit `e430318`)
 
 - **P1-T8 — Verifier replay (Python ports)**
   - Objective: Port `SourceAttributionVerifier` and `DomainConstraintVerifier` from the Co-Pilot module's PHP to Python. Parity test fixture: a curated set of known-good and known-bad Co-Pilot outputs where the PHP verifier verdict is recorded; the Python ports must match byte-for-byte.
   - Files likely involved: `chartbreaker/verifiers/__init__.py`, `chartbreaker/verifiers/source_attribution.py`, `chartbreaker/verifiers/domain_constraint.py`, `chartbreaker/tests/test_verifiers.py`, fixtures under `chartbreaker/tests/fixtures/verifier_parity/`
   - Depends on: P1-T3
   - Acceptance criteria covered: `PROJECT_STRATEGY.md` § Success Criteria § MVP "Verifier-replay verdicts working" row; `ARCHITECTURE.md` § Arbiter — Judge Agent (deterministic half)
-  - Status: Todo
+  - Status: Complete (commit pending)
 
 - **P1-T9 — `chartbreaker/agents/judge_agent.py` (verifier-replay verdict only)**
   - Objective: MVP Judge: verifier-replay verdict on the raw model output (uses P1-T8 ports). Semantic LLM verdict is deferred to Phase 2 (`ARCHITECTURE.md` § MVP vs Final Cut row "Judge — semantic LLM" = "⏸ partial (binary fail/pass only)"). Emits `Verdict` with `{verifier_replay: pass|fail, semantic: not_run, severity: from_static_rubric, recommended_action: regression|discard}`.
