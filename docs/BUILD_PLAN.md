@@ -38,11 +38,11 @@
 - **Non-goals affecting implementation** (`PROJECT_STRATEGY.md` § Non-Goals): no SIEM/WAF/HIDS, no auto-remediation, no multi-target campaigns, no multi-tenant SaaS, no control GUI (read-only dashboard only), no live PHI (synthetic fixture patients only).
 
 ## Current Status
-- **Overall status:** Phase 1 — MVP Floor **complete** (15/16). Phase 2 rubric-critical subset (T8, T7, T1, T2, T4, T5, T11) **complete**. Phase 2.5 (observability expansion, 6 tickets) **added** — non-blocking polish, can run in parallel with Phase 3. Remaining Phase-2 tickets (T3 Glutton, T9 Scribe+redactor, T10 cross-cat regression, T12 narration, T6 optional Impersonator) deferred — rubric Exit Criteria are reachable without them.
-- **Current phase:** Phase 2.5 — Observability Expansion (or Phase 3 — Final Polish; both unblocked)
-- **Current ticket:** none active (operator picks: P2.5 quality-of-life or P3 submission artifacts)
+- **Overall status:** Phase 1 — MVP Floor **complete** (15/16). Phase 2 rubric-critical subset (T8, T7, T1, T2, T4, T5, T11) **complete**. **Phase 2.5 complete** (all 6 tickets: T1 drill-down, T2 LLM trace, T3 live tab, T4 timeline detail, T5 rationale search, T6 run-log capture). Remaining Phase-2 tickets (T3 Glutton, T9 Scribe+redactor, T10 cross-cat regression, T12 narration, T6 optional Impersonator) deferred — rubric Exit Criteria are reachable without them.
+- **Current phase:** Phase 3 — Final Polish (submission artifacts)
+- **Current ticket:** none active (next: pick from P3-T1 vuln reports → P3-T2 cost analysis → P3-T4 demo video)
 - **Blockers:** None
-- **Last updated:** 2026-05-11 after Phase 2.5 added to plan
+- **Last updated:** 2026-05-11 after Phase 2.5 completion
 
 ---
 
@@ -316,21 +316,21 @@ Close the five gaps documented in `docs/OBSERVABILITY.md`. The Phase-2 dashboard
   - Files likely involved: `chartbreaker/observability/dashboard.py`
   - Depends on: P2-T11
   - Acceptance criteria covered: closes `docs/OBSERVABILITY.md` Gap #4 (inter-agent comm detail buried in JSON). Pairs naturally with P2-T12 narration.
-  - Status: Todo
+  - Status: Complete — bar chart preserved inside a collapsed "Aggregate event counts" expander; below it, a chronological feed renders each event with payload JSON foldable per row. Includes per-agent multi-select filter and a "show last N" slider (10-200, default 50) so large runs stay snappy. Each event row's `attempt_id` is a click-through link into the P2.5-T1 drill-down.
 
 - **P2.5-T5 — Rationale search in dashboard sidebar**
   - Objective: Sidebar text input "Search rationales" that, when non-empty, filters every panel by substring match against `judge_verdicts.rationale`. Lets the operator answer "show me every finding mentioning persona / medication:42 / DISAGREEMENT / BREACH-OK" without SQL. Case-insensitive; empty input = no filter.
   - Files likely involved: `chartbreaker/observability/dashboard.py`
   - Depends on: P2-T11
   - Acceptance criteria covered: closes `docs/OBSERVABILITY.md` Gap #5 (no rationale search)
-  - Status: Todo
+  - Status: Complete — sidebar "Search rationales" text input filters verdict-mix, severity, and open-vulns panels via `_apply_rationale_filter`. Case-insensitive substring match; empty / whitespace-only input bypasses the filter. Banner above the dashboard shows match count when active. 3 unit tests.
 
 - **P2.5-T6 — Run log auto-capture**
   - Objective: When `chartbreaker run-mvp-loop` runs, also tee its stderr (Python logs) to `observability/run-<run_id>.log` so the verbose trace persists alongside the SQLite + JSONL records. Configurable via `--log-file <path>` or auto-derived from `run_id`. No behavior change to default operator stdout.
   - Files likely involved: `chartbreaker/cli.py`
   - Depends on: P1-T11
   - Acceptance criteria covered: addresses the "logs only go to stderr; nothing persists unless you manually redirect" observation in `docs/OBSERVABILITY.md` § Layer 2
-  - Status: Todo
+  - Status: Complete — `--log-file [PATH]` flag attaches a DEBUG-level FileHandler to the root logger for the duration of the run. Bare flag resolves to `observability/run-<run_id>.log`; explicit path also supported. Handler is detached in the `finally` block so successive runs don't leak handlers. 4 unit tests cover auto-path resolution, write-through, detach, and parent-dir creation.
 
 ---
 

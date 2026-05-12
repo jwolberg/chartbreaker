@@ -42,6 +42,33 @@ from chartbreaker.target_client import TargetClient
 logger = logging.getLogger(__name__)
 
 
+def _attach_run_log(run_id: str, log_file_arg: str) -> logging.FileHandler:
+    """Attach a per-run FileHandler to the root logger (P2.5-T6).
+
+    `log_file_arg == "auto"` resolves to observability/run-<run_id>.log.
+    Otherwise the literal path is used. The handler uses the same format
+    as the CLI's stderr StreamHandler and is removed in _detach_run_log.
+    """
+    if log_file_arg == "auto":
+        log_path = Path(config.OBSERVABILITY_DIR) / f"run-{run_id}.log"
+    else:
+        log_path = Path(log_file_arg)
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    handler = logging.FileHandler(log_path, encoding="utf-8")
+    handler.setFormatter(
+        logging.Formatter("%(asctime)s %(levelname)s %(name)s | %(message)s")
+    )
+    handler.setLevel(logging.DEBUG)
+    logging.getLogger().addHandler(handler)
+    return handler
+
+
+def _detach_run_log(handler: logging.FileHandler) -> None:
+    """Detach and close the per-run log handler."""
+    logging.getLogger().removeHandler(handler)
+    handler.close()
+
+
 def _build_cat_5a_attempt(campaign_id: str) -> AttackAttempt:
     """Hardcoded Cat 5a token-exhaustion probe (no Injector LLM)."""
     # 1000-char ceiling × pathological repetition pattern. Asks for maximum
@@ -183,6 +210,7 @@ async def run_mvp_loop(
     operator: str,
     enable_semantic_judge: bool = False,
     trace_llm_io: str | None = None,
+    log_file: str | None = None,
 ) -> str:
     """Execute the rubric MVP hard-gate loop. Returns the run_id."""
     run_id = str(uuid4())
@@ -195,6 +223,10 @@ async def run_mvp_loop(
     if trace_llm_io is not None:
         llm_client.enable_payload_trace(trace_llm_io)
 
+    # P2.5-T6: tee stderr (Python logging output) to a per-run log file so
+    # the verbose trace survives the run. "auto" → observability/run-<run_id>.log.
+    log_handler = _attach_run_log(run_id, log_file) if log_file is not None else None
+
     print(f"ChartBreaker MVP loop")
     print(f"  target:   {config.TARGET_BASE_URL}")
     print(f"  run_id:   {run_id}")
@@ -202,6 +234,8 @@ async def run_mvp_loop(
     print(f"  semantic judge: {'on' if enable_semantic_judge else 'off'}")
     if trace_llm_io is not None:
         print(f"  llm payload trace: {trace_llm_io}")
+    if log_handler is not None:
+        print(f"  run log: {log_handler.baseFilename}")
 
     with ObservabilityStore() as store:
         store.start_run(run_id, cli_command=cli_command, operator=operator)
@@ -223,6 +257,8 @@ async def run_mvp_loop(
                 await _run_cat_5a_probe(run_id, target, store)
         finally:
             store.end_run(run_id)
+            if log_handler is not None:
+                _detach_run_log(log_handler)
 
     print()
     print(f"run complete. results in {config.RUNS_SQLITE} (run_id={run_id})")
@@ -319,6 +355,17 @@ def _build_parser() -> argparse.ArgumentParser:
             "Or specify a path."
         ),
     )
+    mvp.add_argument(
+        "--log-file",
+        nargs="?",
+        const="auto",
+        default=None,
+        metavar="PATH",
+        help=(
+            "Tee Python logging output (DEBUG level) to a file alongside stderr. "
+            "Bare flag = auto path observability/run-<run_id>.log. Or specify a path."
+        ),
+    )
 
     regress = sub.add_parser(
         "regress",
@@ -354,6 +401,7 @@ def main() -> None:
                 operator=args.operator,
                 enable_semantic_judge=getattr(args, "semantic_judge", False),
                 trace_llm_io=getattr(args, "trace_llm_io", None),
+                log_file=getattr(args, "log_file", None),
             )
         )
     elif args.cmd == "regress":

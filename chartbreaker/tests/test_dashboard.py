@@ -159,6 +159,40 @@ def test_attempt_detail_query_pulls_full_record(tmp_path: Path) -> None:
     assert detail.iloc[0]["campaign_rationale"] == "dashboard smoke test"
 
 
+def test_rationale_filter_empty_needle_returns_unfiltered() -> None:
+    df = pd.DataFrame(
+        {
+            "rationale": ["Persona shift detected", "Source ID forgery", "clean"],
+        }
+    )
+    assert len(dashboard._apply_rationale_filter(df, "")) == 3
+    assert len(dashboard._apply_rationale_filter(df, "  ")) == 3  # whitespace = no filter
+
+
+def test_rationale_filter_case_insensitive_substring() -> None:
+    df = pd.DataFrame(
+        {
+            "rationale": [
+                "Persona shift detected",
+                "Source ID forgery",
+                "DISAGREEMENT semantic vs verifier_replay",
+                None,
+            ],
+        }
+    )
+    matched = dashboard._apply_rationale_filter(df, "PERSONA")
+    assert len(matched) == 1
+    matched = dashboard._apply_rationale_filter(df, "disagreement")
+    assert len(matched) == 1
+    matched = dashboard._apply_rationale_filter(df, "nope")
+    assert matched.empty
+
+
+def test_rationale_filter_handles_empty_dataframe() -> None:
+    df = pd.DataFrame({"rationale": []})
+    assert dashboard._apply_rationale_filter(df, "anything").empty
+
+
 def test_live_activity_query_returns_recent_events(tmp_path: Path) -> None:
     """The live tab pulls the latest N agent_events ordered by event_id desc."""
     db_path = _make_populated_db(tmp_path)

@@ -86,6 +86,28 @@ def _render_run_picker(runs_df: pd.DataFrame) -> str | None:
     return choice
 
 
+def _render_rationale_search() -> str:
+    """Sidebar substring filter for judge_verdicts.rationale (P2.5-T5)."""
+    return st.sidebar.text_input(
+        "Search rationales",
+        value="",
+        help="Substring (case-insensitive). Filters open-vulns + verdict-mix panels.",
+        key="rationale_search",
+    ).strip()
+
+
+def _apply_rationale_filter(verdicts: pd.DataFrame, needle: str) -> pd.DataFrame:
+    """Return verdicts whose rationale contains `needle` (case-insensitive).
+
+    Empty or whitespace-only needle → no filter applied.
+    """
+    stripped = (needle or "").strip()
+    if not stripped or verdicts.empty:
+        return verdicts
+    mask = verdicts["rationale"].fillna("").str.contains(stripped, case=False, regex=False)
+    return verdicts[mask]
+
+
 def _filter_by_run(df: pd.DataFrame, run_col: str, run_id: str) -> pd.DataFrame:
     if run_id == "ALL":
         return df
@@ -219,6 +241,16 @@ def _render_costs(costs: pd.DataFrame) -> None:
 
 
 def _render_agent_timeline(events: pd.DataFrame, run_id: str) -> None:
+    """Inter-agent communication detail (P2.5-T4).
+
+    Renders the run's `agent_events` rows in chronological order as a
+    foldable feed. Each row's `payload` JSON is folded inside an
+    expander so the operator can see *what* an agent communicated to
+    the next (e.g. Orchestrator → RedTeamLead "dispatch subcategory
+    1d") without opening a SQLite shell. A small histogram of
+    event_type counts at the top keeps the at-a-glance shape from the
+    old bar chart.
+    """
     st.subheader("Agent activity timeline")
     if _empty_state_check(events, "agent events"):
         return
@@ -226,14 +258,58 @@ def _render_agent_timeline(events: pd.DataFrame, run_id: str) -> None:
     if filtered.empty:
         st.info("No events for this filter.")
         return
-    pivot = (
-        filtered.groupby(["agent", "event_type"])
-        .size()
-        .reset_index(name="n")
-        .pivot(index="event_type", columns="agent", values="n")
-        .fillna(0)
+
+    # Top-line histogram — kept so the operator sees aggregate shape at a glance.
+    with st.expander(f"Aggregate event counts ({len(filtered)} events)", expanded=False):
+        counts = (
+            filtered.groupby(["agent", "event_type"])
+            .size()
+            .reset_index(name="n")
+            .pivot(index="event_type", columns="agent", values="n")
+            .fillna(0)
+        )
+        st.bar_chart(counts)
+
+    # Chronological feed with payload expansion.
+    st.caption(
+        "Click any event to see the JSON payload it carried "
+        "(Orchestrator decisions, RedTeamLead dispatches, target response metadata, etc.)."
     )
-    st.bar_chart(pivot)
+    # Filter sidebar: by agent.
+    agents_present = sorted(filtered["agent"].dropna().unique().tolist())
+    selected_agents = st.multiselect(
+        "Filter by agent",
+        options=agents_present,
+        default=agents_present,
+        key="timeline_agent_filter",
+    )
+    feed = filtered[filtered["agent"].isin(selected_agents)].sort_values("created_at")
+    if feed.empty:
+        st.info("No events match the filter.")
+        return
+
+    # Most-recent N events to avoid blowing up the page on huge runs.
+    show_last = st.slider(
+        "Show last N events", min_value=10, max_value=200, value=50, step=10,
+        key="timeline_limit",
+    )
+    feed = feed.tail(show_last).reset_index(drop=True)
+
+    for _, ev in feed.iterrows():
+        ts = str(ev["created_at"])[11:23]
+        agent = ev["agent"]
+        event_type = ev["event_type"]
+        aid = ev.get("attempt_id")
+        attempt_link = (
+            f" · [attempt {str(aid)[:8]}…](?attempt_id={aid})" if aid else ""
+        )
+        header = f"`{ts}` · **{agent}** · {event_type}{attempt_link}"
+        payload = ev.get("payload")
+        if payload:
+            with st.expander(header):
+                st.code(_safe_json_pretty(payload), language="json")
+        else:
+            st.markdown(header)
 
 
 # ---------------------------------------------------------------------------
@@ -521,18 +597,31 @@ def main() -> None:
         st.warning("No runs recorded yet.")
         st.stop()
 
+    rationale_needle = _render_rationale_search()
+
     attempts = _filter_by_run(attempts_all, "run_id", run_id)
     verdicts = _filter_by_run(verdicts_all, "run_id", run_id)
     costs = _filter_by_run(costs_all, "run_id", run_id)
 
+    # Apply rationale search to the verdict-driven panels only. Coverage,
+    # severity, costs, and timeline stay unfiltered because they answer
+    # different questions than "what verdicts match this text?".
+    verdicts_searched = _apply_rationale_filter(verdicts, rationale_needle)
+
     tab_dashboard, tab_live = st.tabs(["📊 Dashboard", "📡 Live activity"])
 
     with tab_dashboard:
+        if rationale_needle:
+            st.info(
+                f"Rationale filter active: `{rationale_needle}` — "
+                f"{len(verdicts_searched)}/{len(verdicts)} verdicts shown in the "
+                "verdict-mix and open-vulns panels."
+            )
         _render_summary_cards(attempts, verdicts, costs)
         _render_coverage(attempts)
-        _render_verdict_breakdown(verdicts)
-        _render_severity(verdicts)
-        _render_open_vulns(verdicts, attempts)
+        _render_verdict_breakdown(verdicts_searched)
+        _render_severity(verdicts_searched)
+        _render_open_vulns(verdicts_searched, attempts)
         _render_costs(costs)
         _render_agent_timeline(events_all, run_id)
 
