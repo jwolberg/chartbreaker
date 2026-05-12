@@ -33,6 +33,8 @@ import sqlite3
 import sys
 from pathlib import Path
 
+import altair as alt
+
 # Streamlit launches this script with `chartbreaker/observability/` on
 # sys.path (the script's own directory), NOT the repo root. That makes
 # `from chartbreaker.config import ...` fail with ModuleNotFoundError
@@ -143,6 +145,59 @@ SEVERITY_DESCRIPTION: dict[str, str] = {
     "low": "Probe captured; no exploit reached. Useful as a baseline.",
     "info": "Background event; no security signal.",
 }
+
+
+# ---------------------------------------------------------------------------
+# Color / emoji palette — keep severity and verdict signals at-a-glance.
+# ---------------------------------------------------------------------------
+
+# Bar / chart colors. Picked for accessibility contrast on Streamlit's
+# default dark theme. Critical / high are warm, low / info muted.
+SEVERITY_COLOR: dict[str, str] = {
+    "critical": "#d32f2f",  # red
+    "high": "#f57c00",      # orange
+    "medium": "#fbc02d",    # amber
+    "low": "#1976d2",       # blue
+    "info": "#9e9e9e",      # gray
+}
+SEVERITY_ORDER: list[str] = ["critical", "high", "medium", "low", "info"]
+
+VERDICT_COLOR: dict[str, str] = {
+    "fail": "#d32f2f",
+    "partial": "#f57c00",
+    "rewrite": "#fbc02d",
+    "pass": "#388e3c",      # green
+    "not_run": "#9e9e9e",
+}
+
+# Emoji prefixes used in dataframes (Streamlit-portable, no CSS needed).
+SEVERITY_EMOJI: dict[str, str] = {
+    "critical": "🟥",
+    "high": "🟧",
+    "medium": "🟨",
+    "low": "🟦",
+    "info": "⬜",
+}
+
+VERIFIER_EMOJI: dict[str, str] = {
+    "fail": "🟥",
+    "pass": "🟢",
+}
+
+SEMANTIC_EMOJI: dict[str, str] = {
+    "fail": "🟥",
+    "partial": "🟧",
+    "pass": "🟢",
+    "not_run": "⬜",
+}
+
+
+def _decorate(value: str | None, mapping: dict[str, str]) -> str:
+    """Prefix a value with its color emoji. Falls through unchanged on miss."""
+    if value is None:
+        return ""
+    emoji = mapping.get(value, "")
+    return f"{emoji} {value}" if emoji else value
 
 
 # Verdict-field explainers (used in metric help= and rendered subheaders).
@@ -356,14 +411,25 @@ def _render_summary_cards(
         fail_rate = (
             (verdicts["verifier_replay"] == "fail").sum() / len(verdicts) * 100
         )
+        # Threshold-based emoji so the operator sees at a glance whether
+        # this number needs eyes. 🟥 ≥ 50%, 🟧 ≥ 25%, 🟨 ≥ 10%, 🟢 < 10%.
+        if fail_rate >= 50:
+            indicator = "🟥"
+        elif fail_rate >= 25:
+            indicator = "🟧"
+        elif fail_rate >= 10:
+            indicator = "🟨"
+        else:
+            indicator = "🟢"
         cols[1].metric(
             "Verifier fail rate",
-            f"{fail_rate:.0f}%",
+            f"{indicator} {fail_rate:.0f}%",
             help=(
                 "Percentage of attempts where the deterministic Python "
                 "verifier (re-running the Co-Pilot's PHP verifier logic) "
                 "said the response should have been rejected. High = the "
-                "target is accepting responses our reference port would block."
+                "target is accepting responses our reference port would block.\n\n"
+                "Thresholds: 🟢 <10% · 🟨 ≥10% · 🟧 ≥25% · 🟥 ≥50%"
             ),
         )
     else:
@@ -432,6 +498,34 @@ def _render_coverage(attempts: pd.DataFrame) -> None:
         st.dataframe(touched, hide_index=True, use_container_width=True)
 
 
+def _verdict_bar_chart(
+    df: pd.DataFrame,
+    column: str,
+    color_map: dict[str, str],
+    title: str,
+) -> alt.Chart:
+    """Build a colored Altair bar chart for a single verdict column."""
+    counts = df[column].value_counts().reset_index()
+    counts.columns = ["verdict", "count"]
+    domain = list(color_map.keys())
+    range_ = [color_map[k] for k in domain]
+    return (
+        alt.Chart(counts)
+        .mark_bar()
+        .encode(
+            x=alt.X("verdict:N", sort=domain, title=None),
+            y=alt.Y("count:Q", title="Count"),
+            color=alt.Color(
+                "verdict:N",
+                scale=alt.Scale(domain=domain, range=range_),
+                legend=None,
+            ),
+            tooltip=["verdict", "count"],
+        )
+        .properties(title=title, height=240)
+    )
+
+
 def _render_verdict_breakdown(verdicts: pd.DataFrame) -> None:
     st.subheader(
         "Judge verdict mix",
@@ -448,15 +542,32 @@ def _render_verdict_breakdown(verdicts: pd.DataFrame) -> None:
     with col1:
         st.caption("**Verifier replay** (deterministic)")
         st.caption(HELP_VERIFIER_REPLAY)
-        replay_counts = verdicts["verifier_replay"].value_counts().reset_index()
-        replay_counts.columns = ["verdict", "count"]
-        st.bar_chart(replay_counts.set_index("verdict"))
+        st.altair_chart(
+            _verdict_bar_chart(
+                verdicts,
+                "verifier_replay",
+                {"fail": VERDICT_COLOR["fail"], "pass": VERDICT_COLOR["pass"]},
+                "Verifier replay",
+            ),
+            use_container_width=True,
+        )
     with col2:
         st.caption("**Semantic LLM** (gpt-5.4-nano)")
         st.caption(HELP_SEMANTIC)
-        sem_counts = verdicts["semantic"].value_counts().reset_index()
-        sem_counts.columns = ["verdict", "count"]
-        st.bar_chart(sem_counts.set_index("verdict"))
+        st.altair_chart(
+            _verdict_bar_chart(
+                verdicts,
+                "semantic",
+                {
+                    "fail": VERDICT_COLOR["fail"],
+                    "partial": VERDICT_COLOR["partial"],
+                    "pass": VERDICT_COLOR["pass"],
+                    "not_run": VERDICT_COLOR["not_run"],
+                },
+                "Semantic LLM",
+            ),
+            use_container_width=True,
+        )
 
 
 def _render_severity(verdicts: pd.DataFrame) -> None:
@@ -466,20 +577,40 @@ def _render_severity(verdicts: pd.DataFrame) -> None:
     )
     if _empty_state_check(verdicts, "judge verdicts"):
         return
-    sev_order = ["info", "low", "medium", "high", "critical"]
+    # Ensure all severity levels appear so the chart shape is comparable
+    # across runs even when some severities have zero entries.
     sev_counts = (
         verdicts["severity"]
         .value_counts()
-        .reindex(sev_order, fill_value=0)
+        .reindex(SEVERITY_ORDER, fill_value=0)
         .reset_index()
     )
     sev_counts.columns = ["severity", "count"]
-    st.bar_chart(sev_counts.set_index("severity"))
+    chart = (
+        alt.Chart(sev_counts)
+        .mark_bar()
+        .encode(
+            x=alt.X("severity:N", sort=SEVERITY_ORDER, title=None),
+            y=alt.Y("count:Q", title="Verdict count"),
+            color=alt.Color(
+                "severity:N",
+                scale=alt.Scale(
+                    domain=SEVERITY_ORDER,
+                    range=[SEVERITY_COLOR[s] for s in SEVERITY_ORDER],
+                ),
+                legend=None,
+            ),
+            tooltip=["severity", "count"],
+        )
+        .properties(height=240)
+    )
+    st.altair_chart(chart, use_container_width=True)
     st.caption(
-        "Severity comes from the static rubric in `chartbreaker/agents/judge_agent.py` "
-        "(per-subcategory mapping from `docs/THREAT_MODEL.md`). It reflects the "
-        "*potential* impact of the attack vector, not whether this specific "
-        "attempt succeeded."
+        "🟥 critical · 🟧 high · 🟨 medium · 🟦 low · ⬜ info. Severity comes "
+        "from the static rubric in `chartbreaker/agents/judge_agent.py` "
+        "(per-subcategory mapping from `docs/THREAT_MODEL.md`). It reflects "
+        "the *potential* impact of the attack vector, not whether this "
+        "specific attempt succeeded."
     )
 
 
@@ -544,6 +675,22 @@ stale `not_run` rows.
     # without consulting the legend.
     joined["attack vector"] = joined["subcategory_id"].apply(
         lambda s: SUBCATEGORY_LABEL.get(s, "(unknown)")
+    )
+    # Sort by severity so the most critical findings land at the top of the
+    # table. Critical → high → medium → low → info.
+    sev_rank = {s: i for i, s in enumerate(SEVERITY_ORDER)}
+    joined["_sev_rank"] = joined["severity"].map(sev_rank).fillna(99)
+    joined = joined.sort_values("_sev_rank").drop(columns="_sev_rank")
+    # Color-code the verdict and severity columns with emoji prefixes so
+    # rows that need attention pull the eye on first scan.
+    joined["verifier_replay"] = joined["verifier_replay"].apply(
+        lambda v: _decorate(v, VERIFIER_EMOJI)
+    )
+    joined["semantic"] = joined["semantic"].apply(
+        lambda v: _decorate(v, SEMANTIC_EMOJI)
+    )
+    joined["severity"] = joined["severity"].apply(
+        lambda v: _decorate(v, SEVERITY_EMOJI)
     )
     cols = [
         "detail",
@@ -1050,7 +1197,25 @@ def _render_live_activity(db_path: str) -> None:
         )
         meaning = EVENT_TYPE_DESCRIPTION.get(event_type, "")
         agent_role = AGENT_DESCRIPTION.get(agent, "")
-        header = f"`{ts}` · **{agent}** · `{event_type}`{attempt_link}"
+        # Color-code verdict_recorded events by severity so the operator
+        # spots criticals/highs in the feed without expanding payloads.
+        verdict_emoji = ""
+        if event_type == "verdict_recorded" and ev.get("payload"):
+            try:
+                p = json.loads(ev["payload"])
+                sev = p.get("severity", "")
+                semantic = p.get("semantic", "")
+                # Prefer severity emoji for the most useful signal; fall
+                # back to semantic verdict if severity is missing.
+                verdict_emoji = (
+                    SEVERITY_EMOJI.get(sev)
+                    or SEMANTIC_EMOJI.get(semantic)
+                    or ""
+                )
+            except (ValueError, TypeError):
+                pass
+        prefix = f"{verdict_emoji} " if verdict_emoji else ""
+        header = f"{prefix}`{ts}` · **{agent}** · `{event_type}`{attempt_link}"
         if meaning:
             header += f" — _{meaning}_"
         if ev.get("payload"):
