@@ -361,14 +361,14 @@ Generate the Final-only submission artifacts: vulnerability reports from live fi
   - Files likely involved: `COST_ANALYSIS.md`
   - Depends on: P1-T7 (cost telemetry must be populated by real runs)
   - Acceptance criteria covered: `ASSIGNMENT.md` § Submission Requirements "AI Cost Analysis" row; `PROJECT_STRATEGY.md` § Success Criteria § Final "Cost analysis" row
-  - Status: Todo
+  - Status: Complete — `COST_ANALYSIS.md` reports actual dev spend ($0.0028 across 7 runs / 33 attempts), per-attack-shape cost model, projections at 100 / 1 K / 10 K / 100 K, and the four architectural changes required at 100 K (Judge gating, batch mode, Postgres migration, narration scoping). Per-tier cost: $0.05 / $0.45 / $4.50 / $25 (with Judge gating) → $15 (with Judge gating + batch mode).
 
 - **P3-T3 — Upload CI-produced `runs.sqlite` as a GitHub release artifact**
   - Objective: After the Final-week regression sweeps complete in GitHub Actions, attach the CI-produced `runs.sqlite` (plus a redacted excerpt of `traces.jsonl`) to a GitHub release tag. Reviewers can download and SQL-query the same data the operator sees locally. **Replaces the original "deploy dashboard to public HTTPS URL" ticket** — the dashboard is local-only per the locked-in Operating Model.
   - Files likely involved: `.github/workflows/regression-sweep.yml`, release artifact upload step
   - Depends on: P2-T11 (dashboard exists locally), Phase-2 runtime sufficient to populate `runs.sqlite`
   - Acceptance criteria covered: `PROJECT_STRATEGY.md` § Success Criteria § Final "Observability dashboard demonstrated" row (CI-produced `runs.sqlite` downloadable component)
-  - Status: Todo
+  - Status: Complete — `.github/workflows/regression-sweep.yml` runs daily 06:00 UTC + supports manual dispatch with optional `--semantic-judge`. Pulls secrets `CHARTBREAKER_TARGET_USER` / `CHARTBREAKER_TARGET_PASSWORD` / `OPENAI_API_KEY` / `OPENROUTER_API_KEY` from repo settings. Always uploads `runs.sqlite` + `traces.jsonl` + per-run logs + LLM payload traces as a workflow artifact (30 day retention) and additionally publishes them to a rolling `nightly` GitHub release tag on the scheduled run.
 
 - **P3-T4 — Demo video (3–5 min)**
   - Objective: Three-act recording per `PROJECT_STRATEGY.md` § Demo & Social Plan: (1) manual jailbreak problem, (2) platform run with the **local** dashboard walkthrough on `localhost:8501`, (3) regression re-run of a previously-pinned exploit. The local dashboard is the answer to the rubric's observability questions — recorded on operator's laptop.

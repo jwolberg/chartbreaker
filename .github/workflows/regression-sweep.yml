@@ -1,0 +1,130 @@
+name: ChartBreaker — scheduled regression sweep
+
+# Runs the regression-pinned attack cases against the live OpenEMR target
+# on a schedule and uploads the resulting runs.sqlite + traces.jsonl as
+# a release artifact so reviewers can download and SQL-query the same
+# observability data the operator sees locally.
+#
+# Per docs/PROJECT_STRATEGY.md § Operating Model § Hosting Topology:
+# - The OpenEMR target is the only publicly addressable surface.
+# - ChartBreaker itself has no public host. This workflow runs in CI
+#   only on a schedule (or manual dispatch); it does not expose a
+#   dashboard.
+# - CI uploads its runs.sqlite to a GitHub release tag so reviewers can
+#   download it and open it locally in the dashboard.
+#
+# Per docs/ARCHITECTURE.md § Human Approval Gates:
+# - Target URL is hardcoded in chartbreaker/config.py. No --target-override
+#   flag is used here — that flag requires a paired confirmation flag and
+#   is not appropriate for automated CI.
+
+on:
+  schedule:
+    # Daily at 06:00 UTC. Adjust as the platform matures.
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+    inputs:
+      enable_semantic_judge:
+        description: 'Enable the semantic LLM Judge (costs API credits)'
+        required: false
+        default: 'false'
+        type: choice
+        options: ['true', 'false']
+
+permissions:
+  contents: write   # required to create / update the release artifact
+
+jobs:
+  regression-sweep:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    env:
+      # Secrets must be configured in repository Settings → Secrets and variables → Actions.
+      CHARTBREAKER_TARGET_USER: ${{ secrets.CHARTBREAKER_TARGET_USER }}
+      CHARTBREAKER_TARGET_PASSWORD: ${{ secrets.CHARTBREAKER_TARGET_PASSWORD }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+      # Cracker safety net: keep the cap small in CI to protect the test user
+      # account from accidental lockout if a regression case mis-routes here.
+      CHARTBREAKER_LOGIN_PROBE_BUDGET: '2'
+
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          # Project does not currently ship a pyproject.toml / requirements.txt
+          # at the repo root (OpenEMR composer is unrelated). Install the
+          # minimal runtime deps the platform needs.
+          pip install httpx pydantic 'python-dotenv>=1' pyyaml pandas streamlit pytest
+
+      - name: Run regression sweep
+        # `chartbreaker regress` replays every pinned regression case in
+        # evals/regression_cases.yaml against the live target. Empty suite
+        # is a clean exit; the sweep just records a run with no attempts.
+        run: |
+          python -m chartbreaker.cli regress \
+            --operator ci \
+            --verbose 2>&1 | tee ci-stdout.log
+
+      - name: Optional — full MVP loop (manual dispatch only)
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          ENABLE_SEMANTIC: ${{ github.event.inputs.enable_semantic_judge }}
+        run: |
+          ARGS="--operator ci --trace-llm-io --log-file"
+          if [ "$ENABLE_SEMANTIC" = "true" ]; then
+            ARGS="$ARGS --semantic-judge"
+          fi
+          python -m chartbreaker.cli run-mvp-loop $ARGS 2>&1 | tee -a ci-stdout.log
+
+      - name: Collect artifacts
+        run: |
+          mkdir -p artifacts
+          # SQLite + JSONL + per-run logs + LLM payload traces (if any).
+          cp observability/runs.sqlite artifacts/ 2>/dev/null || true
+          cp observability/traces.jsonl artifacts/ 2>/dev/null || true
+          cp observability/run-*.log artifacts/ 2>/dev/null || true
+          cp observability/llm-trace-*.jsonl artifacts/ 2>/dev/null || true
+          cp ci-stdout.log artifacts/ 2>/dev/null || true
+          ls -la artifacts/
+
+      - name: Upload workflow artifact (always)
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: chartbreaker-runs-${{ github.run_id }}
+          path: artifacts/
+          retention-days: 30
+
+      - name: Publish release artifact (scheduled runs only)
+        # On the cron schedule, also attach to a rolling release tag so
+        # reviewers can download the latest sweep's runs.sqlite without
+        # navigating per-workflow-run artifacts.
+        if: github.event_name == 'schedule'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: nightly
+          name: ChartBreaker — nightly regression sweep
+          body: |
+            Automated nightly regression sweep against the OpenEMR Clinical Co-Pilot.
+
+            Download `runs.sqlite` and open it with the local dashboard:
+            ```
+            streamlit run chartbreaker/observability/dashboard.py
+            ```
+            See `docs/OBSERVABILITY.md` for how to query the artifacts.
+          files: |
+            artifacts/runs.sqlite
+            artifacts/traces.jsonl
+            artifacts/ci-stdout.log
+          fail_on_unmatched_files: false
+          generate_release_notes: false

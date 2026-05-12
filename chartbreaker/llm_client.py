@@ -199,11 +199,15 @@ async def chat(
     if api_key is not None:
         headers["Authorization"] = f"Bearer {api_key}"
 
+    # OpenAI's gpt-5.x family deprecated `max_tokens` in favor of
+    # `max_completion_tokens`. Other providers (OpenRouter, Ollama, Anthropic)
+    # still accept `max_tokens` on their /v1/chat/completions surface.
+    token_param = "max_completion_tokens" if role_cfg.provider == "openai" else "max_tokens"
     payload: dict = {
         "model": role_cfg.model,
         "messages": messages,
         "temperature": temperature,
-        "max_tokens": max_tokens,
+        token_param: max_tokens,
     }
 
     url = f"{provider_cfg.base_url}/chat/completions"
