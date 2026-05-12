@@ -38,11 +38,11 @@
 - **Non-goals affecting implementation** (`PROJECT_STRATEGY.md` § Non-Goals): no SIEM/WAF/HIDS, no auto-remediation, no multi-target campaigns, no multi-tenant SaaS, no control GUI (read-only dashboard only), no live PHI (synthetic fixture patients only).
 
 ## Current Status
-- **Overall status:** Phase 1 — MVP Floor in progress (8 of 16 tickets complete)
+- **Overall status:** Phase 1 — MVP Floor in progress (11 of 16 tickets complete; rubric MVP hard gate **code-complete**, awaiting live run)
 - **Current phase:** Phase 1 — MVP Floor
-- **Current ticket:** P1-T9 (Judge — verifier-replay only)
-- **Blockers:** None
-- **Last updated:** 2026-05-11 after commit `e430318` (P1-T8 commit pending in next push)
+- **Current ticket:** P1-T12 (Cracker specialist — Cat 2f pid swap + Cat 6a CSRF replay)
+- **Blockers:** None for code progress; operator must run `python -m chartbreaker.cli run-mvp-loop` with env vars set to actually exercise the live target (rubric gate evidence)
+- **Last updated:** 2026-05-11 after commit `d43b49c` (P1-T11 commit pending in next push)
 
 ---
 
@@ -117,28 +117,28 @@ Every row in `PROJECT_STRATEGY.md` § Success Criteria § MVP is green:
   - Files likely involved: `chartbreaker/verifiers/__init__.py`, `chartbreaker/verifiers/source_attribution.py`, `chartbreaker/verifiers/domain_constraint.py`, `chartbreaker/tests/test_verifiers.py`, fixtures under `chartbreaker/tests/fixtures/verifier_parity/`
   - Depends on: P1-T3
   - Acceptance criteria covered: `PROJECT_STRATEGY.md` § Success Criteria § MVP "Verifier-replay verdicts working" row; `ARCHITECTURE.md` § Arbiter — Judge Agent (deterministic half)
-  - Status: Complete (commit pending)
+  - Status: Complete (commit `d43b49c`)
 
 - **P1-T9 — `chartbreaker/agents/judge_agent.py` (verifier-replay verdict only)**
   - Objective: MVP Judge: verifier-replay verdict on the raw model output (uses P1-T8 ports). Semantic LLM verdict is deferred to Phase 2 (`ARCHITECTURE.md` § MVP vs Final Cut row "Judge — semantic LLM" = "⏸ partial (binary fail/pass only)"). Emits `Verdict` with `{verifier_replay: pass|fail, semantic: not_run, severity: from_static_rubric, recommended_action: regression|discard}`.
   - Files likely involved: `chartbreaker/agents/__init__.py`, `chartbreaker/agents/judge_agent.py`
   - Depends on: P1-T4, P1-T8
   - Acceptance criteria covered: `ARCHITECTURE.md` § Arbiter — Judge Agent; `ARCHITECTURE.md` § MVP vs Final Cut "Judge — verifier replay" row
-  - Status: Complete (commit pending)
+  - Status: Complete (commit `d43b49c`)
 
 - **P1-T10 — `chartbreaker/agents/specialists/injection_specialist.py` (Injector for Cat 1a, 1b)**
   - Objective: MVP Injector covering direct injection (Cat 1a) and indirect injection via chart text (Cat 1b — the marquee finding). Reads seed cases, dispatches via `llm_client` to OpenRouter dolphin-mixtral, returns `AttackAttempt`. Other Category 1 sub-IDs are Phase-2 work.
   - Files likely involved: `chartbreaker/agents/specialists/__init__.py`, `chartbreaker/agents/specialists/injection_specialist.py`
   - Depends on: P1-T4, P1-T5
   - Acceptance criteria covered: `ARCHITECTURE.md` § Injector (LLM specialist); `THREAT_MODEL.md` § Category 1 (1a, 1b); `ARCHITECTURE.md` § MVP vs Final Cut "Injector" row
-  - Status: Complete (commit pending)
+  - Status: Complete (commit `d43b49c`)
 
 - **P1-T11 — Rubric-gate: Injector → Target → Judge end-to-end against live target**
   - Objective: Wire a minimal end-to-end loop (no Orchestrator priority math, no RedTeamLead routing, no graph yet — a straight `cli.py` script) that loads a Cat 1b seed case, calls Injector, posts to Target Client, runs Judge verifier-replay, writes a verdict row. Run it against three distinct attack categories (1a, 1b, plus a manual Cat 5 token-exhaustion probe) to satisfy the rubric's ≥3 categories requirement. **This ticket is the rubric MVP hard gate — Phase 1 can stop here if time runs out and still pass MVP submission.**
   - Files likely involved: `chartbreaker/cli.py` (minimal `chartbreaker run-mvp-loop` command)
   - Depends on: P1-T6, P1-T7, P1-T9, P1-T10
   - Acceptance criteria covered: `ASSIGNMENT.md` § Stage 3 Hard Gate ("≥3 distinct attack categories" + "≥1 agent role running live against the deployed target"); `PROJECT_STRATEGY.md` § Success Criteria § MVP rows 1, 2, 3
-  - Status: Todo
+  - Status: Complete (commit pending) — code shipped; live-run requires operator to set env vars and execute `python -m chartbreaker.cli run-mvp-loop`
 
 - **P1-T12 — `chartbreaker/agents/specialists/protocol_specialist.py` (Cracker for Cat 2f + 6a)**
   - Objective: Deterministic Python specialist for `pid` swap (Cat 2f — authz bypass) and CSRF token replay (Cat 6a). Rate-capped login probe to avoid ChartBreaker test-user lockout. Demos the LLM-vs-deterministic split called out in `ARCHITECTURE.md` § AI vs Deterministic.
