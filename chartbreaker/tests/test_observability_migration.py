@@ -135,7 +135,8 @@ def test_v1_db_gets_response_cookie_columns(tmp_path: Path) -> None:
         version = store._conn.execute(
             "SELECT version FROM schema_version"
         ).fetchone()[0]
-        assert version == 2
+        # P4 bumped the canonical schema_version to 3 (proposed_campaigns).
+        assert version == 3
 
     # Second open: should be a no-op (no duplicate-column error).
     with ObservabilityStore(db_path=db_path, trace_path=trace_path) as store:

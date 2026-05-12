@@ -1890,8 +1890,8 @@ def main() -> None:
     # different questions than "what verdicts match this text?".
     verdicts_searched = _apply_rationale_filter(verdicts, rationale_needle)
 
-    tab_dashboard, tab_live, tab_arch = st.tabs(
-        ["📊 Dashboard", "📡 Live activity", "🗺 Architecture"]
+    tab_dashboard, tab_live, tab_arch, tab_plan = st.tabs(
+        ["📊 Dashboard", "📡 Live activity", "🗺 Architecture", "📋 Plan Next Run"]
     )
 
     with tab_dashboard:
@@ -1923,6 +1923,10 @@ def main() -> None:
 
     with tab_arch:
         _render_architecture_tab()
+
+    with tab_plan:
+        from chartbreaker.observability import proposal_tab  # local: optional dep
+        proposal_tab.render(db_path)
 
 
 if __name__ == "__main__":

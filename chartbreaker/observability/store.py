@@ -98,6 +98,7 @@ class ObservabilityStore:
         schema_sql = _SCHEMA_PATH.read_text()
         self._conn.executescript(schema_sql)
         self._migrate_to_v2()
+        self._migrate_to_v3()
 
     def _migrate_to_v2(self) -> None:
         """Add v2 columns to pre-existing DBs created under schema v1.
@@ -123,6 +124,17 @@ class ObservabilityStore:
         # INSERT OR IGNORE already added the (2) row, so this just removes
         # the stale (1) row when migrating an existing v1 DB.
         self._conn.execute("DELETE FROM schema_version WHERE version < 2")
+
+    def _migrate_to_v3(self) -> None:
+        """Bring v2 DBs up to v3 (Phase-4: proposed_campaigns table).
+
+        The table itself is created by schema.sql's CREATE TABLE IF NOT
+        EXISTS — purely additive, no ALTER on existing tables. The only
+        per-migration work here is retiring stale schema_version rows so
+        a v2 DB ends up reporting version=3 after this runs. Idempotent.
+        """
+        assert self._conn is not None
+        self._conn.execute("DELETE FROM schema_version WHERE version < 3")
 
     # ------------------------------------------------------------------
     # Trace mirror
@@ -455,3 +467,133 @@ class ObservabilityStore:
             (limit,),
         ).fetchall()
         return [row["target_version"] for row in rows if row["target_version"]]
+
+    # ------------------------------------------------------------------
+    # proposed_campaigns CRUD (Phase 4 — Orchestrator Approval Harness).
+    # The harness module (chartbreaker.orchestrator.proposal_harness) is
+    # the only producer of these rows. The Streamlit "Plan Next Run" tab
+    # is the only consumer of pending-state reads. Approved rows are
+    # executed by reusing _run_one_brief() from chartbreaker.cli — these
+    # CRUD helpers carry only the queue lifecycle, not the run itself.
+    # See docs/spec.md and BUILD_PLAN § P4-T1.
+    # ------------------------------------------------------------------
+
+    def insert_proposed_campaign(
+        self,
+        *,
+        proposal_id: str,
+        created_at: str,
+        subcategory_id: str,
+        specialist: str,
+        seed_case_id: str | None,
+        mutation_budget: int,
+        rationale: str,
+        priority_score: float,
+        est_cost_usd: float,
+        parent_finding_id: str | None,
+        status: str,
+        decided_at: str | None = None,
+        decided_by: str | None = None,
+        rejection_reason: str | None = None,
+        run_id: str | None = None,
+    ) -> None:
+        """Insert one proposed_campaigns row. Caller supplies all fields."""
+        assert self._conn is not None
+        self._conn.execute(
+            "INSERT INTO proposed_campaigns "
+            "(proposal_id, created_at, subcategory_id, specialist, seed_case_id, "
+            " mutation_budget, rationale, priority_score, est_cost_usd, "
+            " parent_finding_id, status, decided_at, decided_by, "
+            " rejection_reason, run_id) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                proposal_id,
+                created_at,
+                subcategory_id,
+                specialist,
+                seed_case_id,
+                mutation_budget,
+                rationale,
+                priority_score,
+                est_cost_usd,
+                parent_finding_id,
+                status,
+                decided_at,
+                decided_by,
+                rejection_reason,
+                run_id,
+            ),
+        )
+
+    def update_proposed_campaign_status(
+        self,
+        proposal_id: str,
+        *,
+        status: str,
+        decided_at: str | None = None,
+        decided_by: str | None = None,
+        rejection_reason: str | None = None,
+        run_id: str | None = None,
+    ) -> None:
+        """Transition a proposal's status and stamp the decision fields.
+
+        Only the fields the caller actually sets are written; None leaves
+        the column unchanged so a later approve→execute transition does
+        not blow away the decided_at/by recorded at approval time.
+        """
+        assert self._conn is not None
+        sets = ["status = ?"]
+        args: list[object] = [status]
+        if decided_at is not None:
+            sets.append("decided_at = ?")
+            args.append(decided_at)
+        if decided_by is not None:
+            sets.append("decided_by = ?")
+            args.append(decided_by)
+        if rejection_reason is not None:
+            sets.append("rejection_reason = ?")
+            args.append(rejection_reason)
+        if run_id is not None:
+            sets.append("run_id = ?")
+            args.append(run_id)
+        args.append(proposal_id)
+        self._conn.execute(
+            f"UPDATE proposed_campaigns SET {', '.join(sets)} WHERE proposal_id = ?",
+            args,
+        )
+
+    def set_proposed_campaign_mutation_budget(
+        self, proposal_id: str, mutation_budget: int
+    ) -> None:
+        """Persist a user-edited mutation budget. Independent of status."""
+        assert self._conn is not None
+        self._conn.execute(
+            "UPDATE proposed_campaigns SET mutation_budget = ? "
+            "WHERE proposal_id = ?",
+            (mutation_budget, proposal_id),
+        )
+
+    def list_proposed_campaigns(
+        self, status: str | None = None
+    ) -> list[dict]:
+        """Return proposed_campaigns rows as a list of dicts. Most-recent first."""
+        assert self._conn is not None
+        if status is None:
+            rows = self._conn.execute(
+                "SELECT * FROM proposed_campaigns ORDER BY created_at DESC"
+            ).fetchall()
+        else:
+            rows = self._conn.execute(
+                "SELECT * FROM proposed_campaigns WHERE status = ? "
+                "ORDER BY created_at DESC",
+                (status,),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def get_proposed_campaign(self, proposal_id: str) -> dict | None:
+        assert self._conn is not None
+        row = self._conn.execute(
+            "SELECT * FROM proposed_campaigns WHERE proposal_id = ?",
+            (proposal_id,),
+        ).fetchone()
+        return dict(row) if row else None

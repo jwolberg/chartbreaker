@@ -406,6 +406,18 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     calibrate.add_argument("--verbose", action="store_true")
 
+    # P4-T6 (Phase 4 stretch) — generate proposed campaigns from the CLI.
+    # Spec: docs/spec.md. The Streamlit "Plan Next Run" tab is the primary
+    # surface; this subcommand exists for CI / scripting / non-Streamlit
+    # operators.
+    propose_p = sub.add_parser(
+        "propose",
+        help="Generate Orchestrator-proposed campaigns into the approval queue.",
+    )
+    propose_p.add_argument("--n", type=int, default=8, help="How many proposals.")
+    propose_p.add_argument("--json", action="store_true", help="Emit JSON to stdout.")
+    propose_p.add_argument("--verbose", action="store_true")
+
     return parser
 
 
@@ -429,6 +441,25 @@ def main() -> None:
         )
     elif args.cmd == "regress":
         asyncio.run(run_regression_sweep(operator=args.operator))
+    elif args.cmd == "propose":
+        # Late import keeps cli.py import-light when this subcommand is unused.
+        import dataclasses
+        import json as _json
+
+        from chartbreaker.orchestrator import proposal_harness as _proposal_harness
+
+        with ObservabilityStore() as store:
+            props = _proposal_harness.propose(store, n=int(args.n))
+        if args.json:
+            print(_json.dumps([dataclasses.asdict(p) for p in props], indent=2))
+        else:
+            print(f"Generated {len(props)} proposal(s):")
+            for p in props:
+                print(
+                    f"  [{p.subcategory_id}] {p.specialist} "
+                    f"budget={p.mutation_budget} ${p.est_cost_usd:.4f} | "
+                    f"{p.rationale}"
+                )
     elif args.cmd == "calibrate":
         summary = asyncio.run(calibration.run_calibration())
         print(f"\nJudge calibration: {summary.matched}/{summary.total} = {summary.accuracy:.2%}")

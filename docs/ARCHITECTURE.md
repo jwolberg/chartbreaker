@@ -748,12 +748,18 @@ See `docs/OBSERVABILITY.md` for the operator-facing how-to guide (SQL recipes, d
 
 ## Human Approval Gates — Where the Platform Stops
 
-The platform is autonomous up to four hard gates:
+The platform is autonomous up to five hard gates. Four are *outbound* — they stop the platform from emitting an artifact (report, code change, network request) without explicit human consent. The fifth is *inbound* — it stops the platform from running new attack campaigns without explicit human consent on the slate.
+
+**Outbound gates:**
 
 1. **Scribe critical/high drafts** land in `reports/draft/` and require a human to `git mv` them out. The CLI surfaces the diff and the reproducer for review.
 2. **Regression retirement** requires a human commit with explicit reason — the Orchestrator cannot delete or skip a regression case.
 3. **Target Client privileged actions** (uploading vision content, exercising admin-only endpoints, triggering BAA flag tests) require an explicit `--allow-privileged` flag on the CLI.
 4. **Cross-target campaigns** are forbidden by design — the Target Client is hardcoded to a single base URL (`https://openemr.136-118-242-198.sslip.io`) in `config.py` and overrideable only via an explicit `--target-override` CLI flag that also requires `--i-understand-this-attacks-the-target` as a paired confirmation. This is what prevents the platform from being turned against systems it should not attack.
+
+**Inbound gate (Phase 4 — Orchestrator Approval Harness):**
+
+5. **Orchestrator campaign proposals** can be reviewed and approved per-row before they execute. The harness module `chartbreaker/orchestrator/proposal_harness.py` consults the existing priority math in `plan_initial_briefs()`, narrates each candidate via the Orchestrator LLM (with a deterministic-template fallback on failure), and persists each proposal in the new `proposed_campaigns` SQLite table. The Streamlit "📋 Plan Next Run" tab lets the operator tweak per-row `mutation_budget`, check the rows to include, reject rows they don't want, and then launch the approved batch via the existing `_run_one_brief()` path — the same path the autonomous `run-mvp-loop` CLI uses. The autonomous CLI is unchanged; the harness is purely additive. This gate is the **symmetric counterpart to the Scribe outbound gate**: the platform now requires human consent both for what it *emits* (Scribe reports) and for what it *attempts* (Orchestrator campaigns).
 
 ---
 

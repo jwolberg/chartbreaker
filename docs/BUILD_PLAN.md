@@ -38,11 +38,11 @@
 - **Non-goals affecting implementation** (`PROJECT_STRATEGY.md` § Non-Goals): no SIEM/WAF/HIDS, no auto-remediation, no multi-target campaigns, no multi-tenant SaaS, no control GUI (read-only dashboard only), no live PHI (synthetic fixture patients only).
 
 ## Current Status
-- **Overall status:** Phase 1 — MVP Floor **complete** (15/16). Phase 2 rubric-critical subset (T8, T7, T1, T2, T4, T5, T11) **complete**. **Phase 2.5 complete** (all 6 tickets). **Phase 3 complete** — vuln reports (3), cost analysis, CI workflow, README final pass, social draft, demo video all in. Deferred Phase-2 tickets (T3 Glutton, T9 Scribe+redactor, T10 cross-cat regression, T12 narration, T6 Impersonator) remain out of scope.
-- **Current phase:** Submission-ready
+- **Overall status:** Phase 1 — MVP Floor **complete** (15/16). Phase 2 rubric-critical subset (T8, T7, T1, T2, T4, T5, T11) **complete**. **Phase 2.5 complete** (all 6 tickets). **Phase 3 complete** — vuln reports (3), cost analysis, CI workflow, README final pass, social draft, demo video all in. **Phase 4 complete** — Orchestrator Approval Harness (P4-T1 through P4-T6) shipped end-to-end: schema_version v3, harness module, Streamlit "Plan Next Run" tab, doc updates, 26 new tests (139 passing in .venv), CLI subcommand. Deferred Phase-2 tickets (T3 Glutton, T9 Scribe+redactor, T10 cross-cat regression, T12 narration, T6 Impersonator) remain out of scope.
+- **Current phase:** Submission-ready + Phase 4 additive feature shipped
 - **Current ticket:** none active
 - **Blockers:** None
-- **Last updated:** 2026-05-11 after Phase 3 completion
+- **Last updated:** 2026-05-12 after Phase 4 completion (orchestrator approval harness)
 
 ---
 
@@ -414,42 +414,42 @@ Add a human-in-the-loop approval queue on top of the autonomous Orchestrator. Af
   - Files likely involved: `chartbreaker/observability/schema.sql`, `chartbreaker/observability/store.py`
   - Depends on: P1-T7
   - Acceptance criteria covered: spec AC-12 (schema migration round-trip); foundation for AC-1, AC-5, AC-6, AC-7, AC-8, AC-10, AC-13.
-  - Status: Todo
+  - Status: Complete — schema_version bumped 2→3; `proposed_campaigns` table created via `CREATE TABLE IF NOT EXISTS` in `schema.sql` with `status` CHECK constraint and two indexes (`idx_proposed_campaigns_status`, `idx_proposed_campaigns_triple`); `_migrate_to_v3()` added to `ObservabilityStore`; CRUD helpers `insert_proposed_campaign`, `update_proposed_campaign_status`, `set_proposed_campaign_mutation_budget`, `list_proposed_campaigns`, `get_proposed_campaign` added.
 
 - **P4-T2 — `proposal_harness.py` module**
   - Objective: New module `chartbreaker/orchestrator/proposal_harness.py` (+ `chartbreaker/orchestrator/__init__.py`). Exposes the `ProposedCampaign` frozen dataclass and the lifecycle functions `propose(store, n=8, *, llm_client=None)`, `approve(store, proposal_id, mutation_budget_override=None, decided_by="")`, `reject(store, proposal_id, reason=None, decided_by="")`, `list_pending(store)`, `list_approved(store)`, and `execute_approved_batch(store)`. Reuses `plan_initial_briefs()` from `chartbreaker/agents/orchestrator_agent.py` for deterministic parameter selection — does not duplicate priority math. LLM rationale call (`_render_rationale`) uses the central model registry, with deterministic-template fallback on failure (graceful). Cost estimator (`_estimate_cost`) is deterministic from registry token rates. Duplicate-skip rule: do not propose a new row for `(subcategory_id, specialist, seed_case_id)` if a `proposed` row already exists for the same triple. `execute_approved_batch` converts approved rows into `CampaignBrief` objects and dispatches via the existing `_run_one_brief()` path from `chartbreaker/cli.py`; updates each row to `executed` with the new `run_id` after the run returns.
   - Files likely involved: `chartbreaker/orchestrator/__init__.py` *(new)*, `chartbreaker/orchestrator/proposal_harness.py` *(new)*, possibly a thin wrapper / refactor of `_run_one_brief` in `chartbreaker/cli.py` so it can be called from the harness without subprocess
   - Depends on: P4-T1, P1-T14 (Orchestrator priority math), P1-T5 (llm_client), P1-T11 (`_run_one_brief` exists)
   - Acceptance criteria covered: spec AC-2 (priority math equality), AC-3 (LLM-failure fallback), AC-5 / AC-6 (approve/reject lifecycle), AC-7 (batch execution scoped to approved), AC-8 (status→executed with run_id), AC-11 (autonomous path untouched), AC-13 (duplicate-skip rule).
-  - Status: Todo
+  - Status: Complete — `chartbreaker/orchestrator/__init__.py` + `proposal_harness.py` (~420 LOC) exposing the full lifecycle API. Reuses `orchestrator_agent.plan_initial_briefs()` + `orchestrator_agent.priority_score()` verbatim. LLM narration via `chartbreaker.llm_client.chat(role="orchestrator", ...)` with try/except deterministic-template fallback. Deterministic cost estimator reads `_PRICING_USD_PER_1M` from llm_client + model registry from config. Duplicate-skip rule enforced at propose-time. `execute_approved_batch()` reuses `_run_one_brief()` via `_default_brief_runner` (single run path). Accepts an injected `brief_runner` for tests.
 
 - **P4-T3 — Streamlit "Plan Next Run" tab**
   - Objective: New module `chartbreaker/observability/proposal_tab.py` (NOT inline in `dashboard.py` — that file is already ~1800 lines). Exports `render(db_path)`. Three sections: (1) header with "Generate proposals" button + pending count; (2) one card per `proposed` row with rationale, mutation-budget input (constrained `1 ≤ n ≤ 20`), est cost, checkbox, reject button — edits persist to SQLite immediately, not just `st.session_state`; (3) sticky footer "N selected — est $X.YY total" + "Launch approved batch" button (disabled when N=0) wired into `execute_approved_batch`. Also a collapsed "History" section showing `rejected` and `executed` rows. Wire into `dashboard.py` `main()` (~line 1893) as the fourth top-level tab. `dashboard.py` only gets ~6 lines added (import + tab registration).
   - Files likely involved: `chartbreaker/observability/proposal_tab.py` *(new)*, `chartbreaker/observability/dashboard.py` *(register tab only — no logic)*
   - Depends on: P4-T2, P2-T11 (existing Streamlit dashboard)
   - Acceptance criteria covered: spec AC-1 (proposals render), AC-4 (mutation-budget edit persists), AC-9 (cost visible before launch), AC-10 (persistence across restarts visible in UI).
-  - Status: Todo
+  - Status: Complete — `chartbreaker/observability/proposal_tab.py` (~250 LOC) with three sections (generator header, per-row cards, sticky launch footer) plus a collapsed History expander. All callbacks open short-lived `ObservabilityStore` contexts so SQLite is the source of truth, not `st.session_state`. `dashboard.py` adds ~7 lines: 4th tab in `st.tabs([...])` + lazy `from chartbreaker.observability import proposal_tab` inside the `with tab_plan:` block.
 
 - **P4-T4 — Architecture + Observability doc updates**
   - Objective: Update `docs/ARCHITECTURE.md` § Human Approval Gates to describe the new inbound approval gate alongside the existing outbound Scribe gate — symmetry note belongs in the same section. Update `docs/OBSERVABILITY.md`: add `proposed_campaigns` row to the SQLite tables list (key fields per the schema), and add a one-line description of the new tab to § Layer 4. No other doc edits required.
   - Files likely involved: `docs/ARCHITECTURE.md`, `docs/OBSERVABILITY.md`
   - Depends on: P4-T2 (so doc text matches shipped API)
   - Acceptance criteria covered: spec AC-14 (doc updated to reflect new gate).
-  - Status: Todo
+  - Status: Complete — `docs/ARCHITECTURE.md` § Human Approval Gates now splits four outbound gates from one new inbound gate (Phase-4 harness), naming the harness module, the new SQLite table, and the new Streamlit tab. `docs/OBSERVABILITY.md` SQLite tables list adds the `proposed_campaigns` row (table count 8 → 9, schema_version 3) and § Layer 4 adds a one-line description of the new tab.
 
 - **P4-T5 — Tests**
   - Objective: Add three test files under `chartbreaker/tests/`. `test_proposal_harness.py` exercises propose / approve / reject / list_pending / execute_approved_batch with a temp SQLite, an in-memory store fixture, and a mocked LLM client (success + failure paths); covers AC-2, AC-3, AC-5, AC-6, AC-7, AC-8, AC-11, AC-13. `test_proposal_schema.py` covers AC-12 — fresh-DB migration creates the table; re-run is a no-op; existing tables untouched. `test_proposal_tab.py` is a Streamlit smoke test (using `streamlit.testing.v1.AppTest` or equivalent) that loads the tab against a seeded DB and asserts AC-1, AC-4, AC-9, AC-10 hold. Target: ~10 new tests; existing 64+ remain green.
   - Files likely involved: `chartbreaker/tests/test_proposal_harness.py` *(new)*, `chartbreaker/tests/test_proposal_schema.py` *(new)*, `chartbreaker/tests/test_proposal_tab.py` *(new)*
   - Depends on: P4-T1, P4-T2, P4-T3
   - Acceptance criteria covered: All AC-1 through AC-13 mechanically verified.
-  - Status: Todo
+  - Status: Complete — 26 new tests: 4 schema (test_proposal_schema.py), 17 harness (test_proposal_harness.py), 5 tab (test_proposal_tab.py, guarded with `pytest.importorskip("streamlit")`). `.venv` reports **139 passed, 2 skipped** (the 5 tab tests skip when streamlit is absent — same posture as the pre-existing test_dashboard.py). System Python (with streamlit installed) reports all 26 new tests passing. Pre-existing `test_observability_migration.py` assertion bumped 2→3 to track the schema_version change.
 
 - **P4-T6 — Stretch: `chartbreaker propose [--json]` CLI subcommand**
   - Objective: Add a new CLI subcommand `chartbreaker propose [--json] [--n 8]` that generates a slate of proposals (calling `propose()` from the harness) and prints them. JSON output mode for CI / scripting. Ship **only** if it falls out in ≤30 LOC against the existing harness; otherwise defer to a follow-up phase.
   - Files likely involved: `chartbreaker/cli.py` (small additive change)
   - Depends on: P4-T2
   - Acceptance criteria covered: none mandatory; nice-to-have for non-Streamlit operators and CI.
-  - Status: Todo (stretch — skip if non-trivial)
+  - Status: Complete — shipped under the 30 LOC ceiling. `chartbreaker propose [--n N] [--json] [--verbose]` subparser + matching branch in `main()` call `proposal_harness.propose(store, n=args.n)` and emit either a per-row text listing or a JSON dump (via `dataclasses.asdict`). No effect on `run-mvp-loop` / `regress` / `calibrate`.
 
 ---
 

@@ -1,4 +1,4 @@
--- ChartBreaker observability schema (SQLite, schema_version = 2).
+-- ChartBreaker observability schema (SQLite, schema_version = 3).
 -- Matches docs/PROJECT_STRATEGY.md § Logging and State Store Requirement.
 -- Column shapes follow the Pydantic state objects in chartbreaker/state.py.
 
@@ -14,7 +14,7 @@ PRAGMA journal_mode = WAL;
 CREATE TABLE IF NOT EXISTS schema_version (
     version INTEGER PRIMARY KEY
 );
-INSERT OR IGNORE INTO schema_version (version) VALUES (2);
+INSERT OR IGNORE INTO schema_version (version) VALUES (3);
 
 -- ---------------------------------------------------------------------------
 -- runs: one row per CLI invocation or scheduled CI sweep.
@@ -155,3 +155,37 @@ CREATE INDEX IF NOT EXISTS idx_agent_events_run ON agent_events(run_id);
 CREATE INDEX IF NOT EXISTS idx_agent_events_attempt ON agent_events(attempt_id);
 CREATE INDEX IF NOT EXISTS idx_agent_events_agent ON agent_events(agent);
 CREATE INDEX IF NOT EXISTS idx_agent_events_created ON agent_events(created_at);
+
+-- ---------------------------------------------------------------------------
+-- proposed_campaigns (schema v3, Phase-4): human-approval queue for the
+-- Orchestrator's next-run slate. Parameters (subcategory, specialist, seed,
+-- mutation_budget) come from plan_initial_briefs() priority math; rationale
+-- prose comes from the Orchestrator LLM with a deterministic-template
+-- fallback. Operator approves/rejects in the Streamlit "Plan Next Run"
+-- tab; approved rows execute via the existing _run_one_brief() path and
+-- transition to status='executed' with their run_id recorded.
+--
+-- Standalone table — no FK into runs/campaigns, because a proposal is a
+-- pre-launch entity. The optional run_id column is a non-enforced pointer
+-- back to the post-launch run.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS proposed_campaigns (
+    proposal_id        TEXT    PRIMARY KEY,
+    created_at         TEXT    NOT NULL,
+    subcategory_id     TEXT    NOT NULL,
+    specialist         TEXT    NOT NULL,
+    seed_case_id       TEXT,
+    mutation_budget    INTEGER NOT NULL,
+    rationale          TEXT    NOT NULL,
+    priority_score     REAL    NOT NULL,
+    est_cost_usd       REAL    NOT NULL,
+    parent_finding_id  TEXT,
+    status             TEXT    NOT NULL CHECK (status IN ('proposed', 'approved', 'rejected', 'executed')),
+    decided_at         TEXT,
+    decided_by         TEXT,
+    rejection_reason   TEXT,
+    run_id             TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_proposed_campaigns_status ON proposed_campaigns(status);
+CREATE INDEX IF NOT EXISTS idx_proposed_campaigns_triple
+    ON proposed_campaigns(subcategory_id, specialist, seed_case_id);

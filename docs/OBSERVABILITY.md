@@ -78,7 +78,7 @@ chartbreaker run-mvp-loop --verbose 2> observability/run-$(date +%s).log
 
 ## Layer 3 — SQLite + JSONL store (source of truth)
 
-`observability/runs.sqlite` holds every state transition. The schema lives in `chartbreaker/observability/schema.sql`. Eight tables plus `schema_version`:
+`observability/runs.sqlite` holds every state transition. The schema lives in `chartbreaker/observability/schema.sql`. Nine tables plus `schema_version` (currently 3):
 
 | Table | One row per | Key fields |
 |---|---|---|
@@ -90,6 +90,7 @@ chartbreaker run-mvp-loop --verbose 2> observability/run-$(date +%s).log
 | `findings` | Scribe-drafted vuln report (Phase 2.x) | `finding_id`, `body_markdown`, `promoted_to_published` |
 | `costs` | LLM call telemetry | `agent`, `provider`, `model`, `prompt_tokens`, `completion_tokens`, `usd` |
 | `agent_events` | **The timeline.** Every state transition writes one row here. | `agent`, `event_type`, `payload` (JSON), `run_id`, `campaign_id`, `attempt_id` |
+| `proposed_campaigns` | Human-approval queue entry (Phase 4) | `proposal_id`, `subcategory_id`, `specialist`, `seed_case_id`, `mutation_budget`, `rationale`, `priority_score`, `est_cost_usd`, `status` (`proposed`/`approved`/`rejected`/`executed`), `decided_at`, `decided_by`, `rejection_reason`, `run_id` |
 
 `observability/traces.jsonl` is the same agent-events stream as an append-only JSONL mirror, plus `cost_recorded` rows (which are not in `agent_events` to keep the timeline readable). Format:
 
@@ -181,6 +182,7 @@ The dashboard answers the rubric's observability questions from `runs.sqlite`. L
 | Cost by agent | Where the dollar went per run. |
 | Agent activity timeline | Heatmap of events × agents — "what did the orchestrator do? what did the judge do?" |
 | Raw runs table | All historical runs, expandable. |
+| **📋 Plan Next Run** tab (Phase 4) | Review, edit, approve/reject the Orchestrator's proposed slate of next campaigns. Click **Generate proposals** to populate; per-row mutation-budget edits persist to SQLite immediately; checked rows + **Launch approved batch** runs only the approved subset through the existing `_run_one_brief()` path. Pending proposals survive `streamlit run` restarts via the `proposed_campaigns` table. See `docs/spec.md` and `chartbreaker/orchestrator/proposal_harness.py`. |
 
 Run picker in the sidebar filters every panel to one run or "All runs."
 
