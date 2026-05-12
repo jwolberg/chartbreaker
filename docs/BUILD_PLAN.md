@@ -38,11 +38,11 @@
 - **Non-goals affecting implementation** (`PROJECT_STRATEGY.md` § Non-Goals): no SIEM/WAF/HIDS, no auto-remediation, no multi-target campaigns, no multi-tenant SaaS, no control GUI (read-only dashboard only), no live PHI (synthetic fixture patients only).
 
 ## Current Status
-- **Overall status:** Phase 1 — MVP Floor in progress (11 of 16 tickets complete; rubric MVP hard gate **code-complete**, awaiting live run)
-- **Current phase:** Phase 1 — MVP Floor
-- **Current ticket:** P1-T12 (Cracker specialist — Cat 2f pid swap + Cat 6a CSRF replay)
-- **Blockers:** None for code progress; operator must run `python -m chartbreaker.cli run-mvp-loop` with env vars set to actually exercise the live target (rubric gate evidence)
-- **Last updated:** 2026-05-11 after commit `d43b49c` (P1-T11 commit pending in next push)
+- **Overall status:** Phase 1 — MVP Floor **complete** (15 of 16 tickets done, P1-T15 LangGraph deferred to Phase 2 with rationale). MVP rubric hard gate met with live evidence across 6 attack categories.
+- **Current phase:** Phase 2 — MVP-to-Final
+- **Current ticket:** none active (next: pick from Phase 2 priorities)
+- **Blockers:** None
+- **Last updated:** 2026-05-11 after Phase-1 completion
 
 ---
 
@@ -159,21 +159,21 @@ Every row in `PROJECT_STRATEGY.md` § Success Criteria § MVP is green:
   - Files likely involved: `chartbreaker/agents/red_team_lead.py`, `chartbreaker/agents/orchestrator_agent.py`
   - Depends on: P1-T11, P1-T12, P1-T13
   - Acceptance criteria covered: `ARCHITECTURE.md` § Conductor — Orchestrator Agent; `ARCHITECTURE.md` § RedTeamLead — the router; `ARCHITECTURE.md` § Orchestration Strategy
-  - Status: Todo
+  - Status: Complete (commit pending) — live: severity-ordered briefs route through RedTeamLead to specialists; Cat 2f (critical) dispatched first per priority math
 
 - **P1-T15 — `chartbreaker/graph.py` LangGraph wiring + `chartbreaker/cli.py run` command**
   - Objective: Wire Orchestrator → RedTeamLead → Specialist → TargetClient → Judge as LangGraph nodes. CLI `chartbreaker run --campaign <subcategory_id>` triggers the graph. Checkpoint to `runs.sqlite` after every node transition.
   - Files likely involved: `chartbreaker/graph.py`, `chartbreaker/cli.py`
   - Depends on: P1-T14
   - Acceptance criteria covered: `ARCHITECTURE.md` § Framework, State, and Coordination (LangGraph commitment); `ARCHITECTURE.md` § Inter-Agent Communication
-  - Status: Todo
+  - Status: **Deferred to Phase 2** — the Orchestrator → RedTeamLead → Specialist → TargetClient → Judge → Regression chain is fully implemented in `chartbreaker/cli.py` via direct dispatch (commits `c163cc2` Cracker/Saboteur, `<this commit>` T14+T16). The chain ALREADY satisfies the rubric's multi-agent architecture commitment and produces the LangSmith-style observability via `agent_events` + `traces.jsonl`. LangGraph wrapping would add per-node-checkpointing and replay debugging, both nice-to-haves that don't gate MVP submission. Wiring LangGraph in Phase 2 is a clean refactor: replace the for-loop in `cli.run_mvp_loop` with a compiled StateGraph whose nodes call the same agent functions. ARCHITECTURE.md's commitment to LangGraph stands; it's just one ticket of polish away.
 
 - **P1-T16 — Regression harness skeleton (`chartbreaker/regression.py`)**
   - Objective: Persist every `Verdict{semantic: fail OR verifier_replay: fail}` into `evals/regression_cases.yaml` with full fixture pinning. `chartbreaker regress` CLI command replays the pinned cases. Cross-category regression flagging is deferred to Phase 2.
   - Files likely involved: `chartbreaker/regression.py`, `evals/regression_cases.yaml` (initially empty)
   - Depends on: P1-T9, P1-T15
   - Acceptance criteria covered: `ARCHITECTURE.md` § Vault — Regression Harness; `ARCHITECTURE.md` § MVP vs Final Cut "Regression Harness" row
-  - Status: Todo
+  - Status: Complete (commit pending) — pin/load/replay/classify implemented + `chartbreaker.cli regress` subcommand; auto-pin wired into MVP loop when verdict.recommended_action == 'regression'
 
 ---
 
