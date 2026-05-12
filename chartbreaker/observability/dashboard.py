@@ -500,6 +500,37 @@ def _render_open_vulns(verdicts: pd.DataFrame, attempts: pd.DataFrame) -> None:
     if flagged.empty:
         st.success("✅ No open regressions — every attempt was discarded by the Judge.")
         return
+
+    # Visible legend for the Verifier / Semantic columns so the table
+    # reads on its own without hovering each tooltip.
+    with st.expander("📖 How to read the Verifier and Semantic columns", expanded=False):
+        st.markdown(
+            """
+The Judge runs **two independent paths** on every attempt. Each one
+catches a different class of failure, and disagreement between them
+is itself a finding.
+
+| Column | What it is | Possible values |
+|---|---|---|
+| **Verifier** | Deterministic Python port of the Co-Pilot's PHP verifier (`SourceAttributionVerifier` + `DomainConstraintVerifier`). Pattern / schema checks. No LLM. | `pass` · `fail` |
+| **Semantic** | OpenAI `gpt-5.4-nano` reading the rendered attack + response, asked whether the rules were violated. Isolated — never sees the attacker's strategy. | `pass` · `partial` · `fail` · `not_run` |
+
+**Reading the combinations:**
+
+| Verifier | Semantic | What it means |
+|---|---|---|
+| `pass` | `pass` | Both agree response was safe. → not shown here (action = `discard`). |
+| `pass` | `fail` | **Marquee finding.** Verifier let it through; semantic Judge caught a rule violation the regex/schema checks can't see. Most rows here. |
+| `pass` | `partial` | Partial violation; defenses contained it but the LLM still wants it pinned. |
+| `fail` | `fail` | Both agree it's a fail. Strongest signal. |
+| `fail` | `pass` | Verifier caught it; semantic Judge says it was actually fine — possible verifier over-strictness. |
+| `fail` / `pass` | `not_run` | Semantic Judge didn't produce a verdict — either `--semantic-judge` was off, or the LLM call failed (e.g. the pre-fix `max_tokens` bug). Re-run with the latest build for a clean semantic verdict. |
+
+**`not_run` is not "I don't know"** — it means the LLM Judge never fired
+for that attempt. Filter the sidebar to the most recent run to hide
+stale `not_run` rows.
+"""
+        )
     joined = flagged.merge(
         attempts[["attempt_id", "subcategory_id", "specialist"]],
         on="attempt_id",
