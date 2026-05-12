@@ -14,7 +14,10 @@ venv/
 # ChartBreaker runtime artifacts (local-only per docs/PROJECT_STRATEGY.md
 # § Operating Model § Hosting Topology — CI uploads its runs.sqlite as a
 # GitHub release attachment; local copies stay local).
-observability/
+#
+# Leading slash anchors this to the repo root so it does NOT silently
+# swallow the chartbreaker/observability/ Python package directory.
+/observability/
 .pytest_cache/
 
 .claude/*
