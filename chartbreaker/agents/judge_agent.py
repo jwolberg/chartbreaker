@@ -106,10 +106,19 @@ def judge(
     # JSON for MVP). These are the *primary* signal because the target does
     # not expose pre-verifier output, so the most useful question is "did the
     # PHP verifier reject/rewrite this response?"
-    php_summary = _safe_load_json(response.audit_log_id)
-    php_source_verdict = (php_summary or {}).get("source_verification")
-    php_domain_verdict = (php_summary or {}).get("domain_verification")
-    php_llm_status = (php_summary or {}).get("llm_status")
+    php_summary = _safe_load_json(response.audit_log_id) or {}
+    php_source_verdict = php_summary.get("source_verification")
+    php_domain_verdict = php_summary.get("domain_verification")
+    php_llm_status = php_summary.get("llm_status")
+
+    # If the caller didn't supply allowed_source_ids (the MVP CLI case),
+    # fall back to the list target_client extracted from body["context"].
+    # That makes the SourceAttribution port use the *same* allowed set the
+    # PHP verifier used, so disagreement findings are real, not false-positive.
+    if not allowed_source_ids:
+        ctx_ids = php_summary.get("allowed_source_ids")
+        if isinstance(ctx_ids, list):
+            allowed_source_ids = [s for s in ctx_ids if isinstance(s, str)]
     if php_source_verdict:
         rationale_parts.append(f"PHP source verifier: {php_source_verdict}")
     if php_domain_verdict:

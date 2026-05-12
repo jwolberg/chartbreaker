@@ -92,6 +92,36 @@ def _safe_parse_json(response: httpx.Response) -> dict[str, Any] | None:
     return body if isinstance(body, dict) else None
 
 
+def _extract_allowed_source_ids(body: dict[str, Any] | None) -> list[str]:
+    """Collect every source_id from body["context"]["domains"][*]["items"][*].
+
+    This mirrors what `ContextPacket::sourceIds()` returns on the PHP side
+    and is the authoritative set of allowed IDs the SourceAttributionVerifier
+    uses. Returns an empty list when the response isn't shaped as expected.
+    """
+    if not isinstance(body, dict):
+        return []
+    context = body.get("context")
+    if not isinstance(context, dict):
+        return []
+    domains = context.get("domains")
+    if not isinstance(domains, dict):
+        return []
+    ids: list[str] = []
+    for domain in domains.values():
+        if not isinstance(domain, dict):
+            continue
+        items = domain.get("items")
+        if not isinstance(items, list):
+            continue
+        for item in items:
+            if isinstance(item, dict):
+                sid = item.get("source_id")
+                if isinstance(sid, str):
+                    ids.append(sid)
+    return ids
+
+
 class TargetClient:
     """Authenticated, single-target HTTP client for the Co-Pilot.
 
@@ -250,6 +280,11 @@ class TargetClient:
             "domain_verification": llm_block.get("domain_verification") if isinstance(llm_block, dict) else None,
             "llm_status": llm_block.get("status") if isinstance(llm_block, dict) else None,
             "failure_reason": llm_block.get("failure_reason") if isinstance(llm_block, dict) else None,
+            # Walk the response context to collect every valid source ID so the
+            # Judge can run its SourceAttributionVerifier port against the same
+            # allowed set the PHP verifier used. Path matches
+            # ContextPacket::toArray + ContextDomain::toArray + SourceItem::toArray.
+            "allowed_source_ids": _extract_allowed_source_ids(body),
         }
 
         return TargetResponse(
