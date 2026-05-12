@@ -97,6 +97,32 @@ class ObservabilityStore:
         assert self._conn is not None
         schema_sql = _SCHEMA_PATH.read_text()
         self._conn.executescript(schema_sql)
+        self._migrate_to_v2()
+
+    def _migrate_to_v2(self) -> None:
+        """Add v2 columns to pre-existing DBs created under schema v1.
+
+        SQLite's CREATE TABLE IF NOT EXISTS does not add columns to an
+        existing table, so we issue conditional ALTER TABLE statements
+        when columns are missing. Idempotent.
+        """
+        assert self._conn is not None
+        existing_cols = {
+            row["name"]
+            for row in self._conn.execute("PRAGMA table_info(target_responses)").fetchall()
+        }
+        if "response_cookies" not in existing_cols:
+            self._conn.execute(
+                "ALTER TABLE target_responses ADD COLUMN response_cookies TEXT"
+            )
+        if "set_cookie_headers" not in existing_cols:
+            self._conn.execute(
+                "ALTER TABLE target_responses ADD COLUMN set_cookie_headers TEXT"
+            )
+        # Retire any pre-v2 schema_version rows. schema.sql's
+        # INSERT OR IGNORE already added the (2) row, so this just removes
+        # the stale (1) row when migrating an existing v1 DB.
+        self._conn.execute("DELETE FROM schema_version WHERE version < 2")
 
     # ------------------------------------------------------------------
     # Trace mirror
@@ -232,8 +258,8 @@ class ObservabilityStore:
             "INSERT INTO target_responses "
             "(attempt_id, http_status, raw_model_output, post_verifier_output, "
             " latency_ms, prompt_tokens, completion_tokens, audit_log_id, "
-            " target_version, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            " target_version, response_cookies, set_cookie_headers, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 response.attempt_id,
                 response.http_status,
@@ -244,6 +270,8 @@ class ObservabilityStore:
                 response.completion_tokens,
                 response.audit_log_id,
                 response.target_version,
+                _json_dump(response.response_cookies),
+                _json_dump(response.set_cookie_headers),
                 _iso(response.created_at),
             ),
         )

@@ -38,11 +38,11 @@
 - **Non-goals affecting implementation** (`PROJECT_STRATEGY.md` § Non-Goals): no SIEM/WAF/HIDS, no auto-remediation, no multi-target campaigns, no multi-tenant SaaS, no control GUI (read-only dashboard only), no live PHI (synthetic fixture patients only).
 
 ## Current Status
-- **Overall status:** Phase 1 — MVP Floor **complete** (15 of 16 tickets done, P1-T15 LangGraph deferred to Phase 2 with rationale). MVP rubric hard gate met with live evidence across 6 attack categories.
+- **Overall status:** Phase 1 — MVP Floor **complete** (15 of 16 tickets done, P1-T15 LangGraph deferred to Phase 2 with rationale). MVP rubric hard gate met with live evidence across 6 attack categories. Phase 2 in progress (rubric-critical subset T8 → T7 → T1 → T2 → T4 → T5 → T11).
 - **Current phase:** Phase 2 — MVP-to-Final
-- **Current ticket:** none active (next: pick from Phase 2 priorities)
+- **Current ticket:** P2-T7 (Judge semantic LLM verdict + calibration)
 - **Blockers:** None
-- **Last updated:** 2026-05-11 after Phase-1 completion
+- **Last updated:** 2026-05-11 after P2-T8 completion
 
 ---
 
@@ -241,10 +241,10 @@ Layer in the components `ARCHITECTURE.md` § MVP vs Final Cut marks as Final-onl
 
 - **P2-T8 — Target Client vision-extraction + login-probe endpoints**
   - Objective: Extend `target_client.py` to support `POST /run-extraction.php` (vision extraction, Saboteur Cat 4a) and the login surface variants used by Cracker Cat 6d/6e beyond routine session establishment.
-  - Files likely involved: `chartbreaker/target_client.py`
+  - Files likely involved: `chartbreaker/target_client.py`, `chartbreaker/state.py`, `chartbreaker/target_endpoints.py`, `chartbreaker/observability/store.py`, `chartbreaker/observability/schema.sql`
   - Depends on: P1-T6
   - Acceptance criteria covered: `ARCHITECTURE.md` § Conduit — Target Client (target endpoints list)
-  - Status: Todo
+  - Status: Complete — HttpRequestShape extended with `form_data`, `multipart_files`, `bypass_auth`; TargetResponse captures `response_cookies` + `set_cookie_headers`; SQLite v1→v2 migration adds columns to existing DBs; `target_endpoints.py` exposes COPILOT/LOGIN_FORM/LOGIN_SUBMIT/VISION_EXTRACTION constants. Live `runs.sqlite` migrated with 24 rows preserved.
 
 - **P2-T9 — Scribe LLM-drafted reports + `chartbreaker/redactor.py`**
   - Objective: Replace the template-only Scribe with an LLM-drafted version. PHI redaction layer (`chartbreaker/redactor.py`) runs post-draft to strip any fixture-patient identifiers before write. Critical/high severity drafts land in `reports/draft/` per the human-approval gate.

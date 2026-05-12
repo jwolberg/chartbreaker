@@ -1,4 +1,4 @@
--- ChartBreaker observability schema (SQLite, schema_version = 1).
+-- ChartBreaker observability schema (SQLite, schema_version = 2).
 -- Matches docs/PROJECT_STRATEGY.md § Logging and State Store Requirement.
 -- Column shapes follow the Pydantic state objects in chartbreaker/state.py.
 
@@ -7,12 +7,14 @@ PRAGMA journal_mode = WAL;
 
 -- ---------------------------------------------------------------------------
 -- schema_version: single-row table that lets future migrations refuse to
--- run against a DB they don't understand.
+-- run against a DB they don't understand. Application-side migration logic
+-- in chartbreaker/observability/store.py adds new columns to existing DBs
+-- via ALTER TABLE on init.
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS schema_version (
     version INTEGER PRIMARY KEY
 );
-INSERT OR IGNORE INTO schema_version (version) VALUES (1);
+INSERT OR IGNORE INTO schema_version (version) VALUES (2);
 
 -- ---------------------------------------------------------------------------
 -- runs: one row per CLI invocation or scheduled CI sweep.
@@ -78,6 +80,8 @@ CREATE TABLE IF NOT EXISTS target_responses (
     completion_tokens     INTEGER,
     audit_log_id          TEXT,
     target_version        TEXT NOT NULL,
+    response_cookies      TEXT,    -- JSON name->value of cookies in response
+    set_cookie_headers    TEXT,    -- JSON list of raw Set-Cookie header values
     created_at            TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_target_responses_status ON target_responses(http_status);

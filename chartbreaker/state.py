@@ -70,14 +70,39 @@ class CampaignBrief(_Frozen):
 # AttackAttempt — Specialist → TargetClient
 # -----------------------------------------------------------------------------
 
+class MultipartFile(_Frozen):
+    """One file part of a multipart/form-data request.
+
+    Used by Saboteur Cat 4a (vision-pipeline upload probes against
+    `/run-extraction.php`). `content_b64` is base64-encoded bytes so
+    the value remains JSON-serializable when written to the
+    observability store.
+    """
+
+    field_name: str
+    filename: str
+    content_b64: str
+    content_type: str = "application/octet-stream"
+
+
 class HttpRequestShape(_Frozen):
-    """A deterministic-specialist's HTTP request envelope."""
+    """A deterministic-specialist's HTTP request envelope.
+
+    Exactly one of `body`, `form_data`, `multipart_files` (or any
+    combination of form_data + multipart_files for multipart bodies)
+    should be set per request. `bypass_auth=True` issues the request
+    from a fresh, unauthenticated httpx client — required for Cracker
+    Cat 6d (session-fixation pre-seed) and 6e (login brute-force).
+    """
 
     method: HttpMethod
     path: str
     body: dict[str, Any] | None = None
     headers: dict[str, str] = Field(default_factory=dict)
     cookies: dict[str, str] | None = None
+    form_data: dict[str, str] | None = None
+    multipart_files: list[MultipartFile] | None = None
+    bypass_auth: bool = False
 
 
 class AttackAttempt(_Frozen):
@@ -132,6 +157,11 @@ class TargetResponse(_Frozen):
     completion_tokens: int | None = None
     audit_log_id: str | None = None
     target_version: str  # e.g. "gpt-5.4-mini" — pinned for regression replay
+    # Response-side metadata for protocol probes (Cat 6d session-fixation
+    # cookie-flag audit, Cat 6e login-response inspection). Optional because
+    # the Co-Pilot briefing path doesn't need it.
+    response_cookies: dict[str, str] | None = None
+    set_cookie_headers: list[str] | None = None
     created_at: datetime = Field(default_factory=_utcnow)
 
 

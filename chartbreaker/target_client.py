@@ -15,6 +15,7 @@ requires explicit CLI flags handled in chartbreaker.cli, not here.
 
 from __future__ import annotations
 
+import base64
 import json
 import logging
 import re
@@ -42,6 +43,17 @@ _COPILOT_PATH = (
 # is /interface/main/main_screen.php?auth=login (confirmed in
 # templates/login/partials/html/login_details.html.twig form action).
 _LOGIN_PATH = f"/interface/main/main_screen.php?auth=login&site={TARGET_SITE}"
+
+# The login *form* itself (renders, sets PHPSESSID cookie). Used by Cracker
+# Cat 6d session-fixation probe to fetch a pre-auth session cookie before
+# attempting to attach an attacker-chosen PHPSESSID.
+_LOGIN_FORM_PATH = f"/interface/login/login.php?site={TARGET_SITE}"
+
+# Vision-extraction pipeline. POST multipart upload here for Saboteur Cat 4a.
+_VISION_EXTRACTION_PATH = (
+    "/interface/modules/custom_modules/oe-module-clinical-copilot"
+    "/public/run-extraction.php"
+)
 
 # Patient chart page that triggers the Co-Pilot module's Bootstrap render
 # (RenderEvent::EVENT_SECTION_LIST_RENDER_AFTER fires here). The bootstrap
@@ -287,6 +299,11 @@ class TargetClient:
             "allowed_source_ids": _extract_allowed_source_ids(body),
         }
 
+        # Capture response cookies and Set-Cookie headers for protocol probes
+        # (Cracker Cat 6d session-fixation, 6e login response analysis).
+        response_cookies = {k: v for k, v in response.cookies.items()} or None
+        set_cookie_headers = response.headers.get_list("set-cookie") or None
+
         return TargetResponse(
             attempt_id=attempt.attempt_id,
             http_status=response.status_code,
@@ -301,6 +318,8 @@ class TargetClient:
             # Phase 2 should split this into a proper dedicated field.
             audit_log_id=json.dumps(php_verifier_summary),
             target_version=llm_block.get("model", "unknown") if isinstance(llm_block, dict) else "unknown",
+            response_cookies=response_cookies,
+            set_cookie_headers=set_cookie_headers,
         )
 
     async def _dispatch_copilot_briefing(self, attempt: AttackAttempt) -> httpx.Response:
@@ -345,7 +364,17 @@ class TargetClient:
         return await self._client.post(_COPILOT_PATH, json=body, headers=headers)
 
     async def _dispatch_http_request(self, req: HttpRequestShape) -> httpx.Response:
-        """Dispatch a deterministic specialist's prepared HTTP envelope."""
+        """Dispatch a deterministic specialist's prepared HTTP envelope.
+
+        Supports:
+        - JSON body (default — `body` field).
+        - Form-urlencoded body (`form_data`).
+        - Multipart upload (`multipart_files`, optionally with `form_data`)
+          for Saboteur Cat 4a vision-pipeline probes.
+        - Unauthenticated dispatch (`bypass_auth=True`) for Cracker Cat 6d
+          (session fixation) and 6e (login brute-force) — issued from a
+          fresh httpx client so they don't touch the authenticated session.
+        """
         assert self._client is not None
 
         # Single-target enforcement at request time: the path must be relative.
@@ -358,19 +387,67 @@ class TargetClient:
             )
 
         headers = dict(req.headers)
-        # Inject the current CSRF token if the specialist didn't set its own
-        # (Cracker often wants to set or omit it on purpose).
-        if "X-CSRF-Token" not in headers and self._csrf_token is not None:
+        # Inject the current CSRF token only on authenticated dispatches and
+        # only if the specialist didn't set its own (Cracker often wants to
+        # set or omit it on purpose).
+        if (
+            not req.bypass_auth
+            and "X-CSRF-Token" not in headers
+            and self._csrf_token is not None
+        ):
             headers["X-CSRF-Token"] = self._csrf_token
 
+        if req.bypass_auth:
+            async with httpx.AsyncClient(
+                base_url=self._base_url,
+                follow_redirects=False,  # protocol probes want to see 302 itself
+                timeout=30.0,
+            ) as fresh:
+                return await self._issue(fresh, req, headers)
+        return await self._issue(self._client, req, headers)
+
+    async def _issue(
+        self,
+        client: httpx.AsyncClient,
+        req: HttpRequestShape,
+        headers: dict[str, str],
+    ) -> httpx.Response:
+        """Translate an HttpRequestShape into an httpx call."""
+        files = None
+        if req.multipart_files:
+            files = [
+                (
+                    mf.field_name,
+                    (mf.filename, base64.b64decode(mf.content_b64), mf.content_type),
+                )
+                for mf in req.multipart_files
+            ]
+
         if req.method == "POST":
-            return await self._client.post(
+            if files is not None:
+                # httpx auto-builds the multipart boundary; form_data rides
+                # alongside as additional non-file parts.
+                return await client.post(
+                    req.path,
+                    data=req.form_data,
+                    files=files,
+                    headers=headers,
+                    cookies=req.cookies,
+                )
+            if req.form_data is not None:
+                return await client.post(
+                    req.path,
+                    data=req.form_data,
+                    headers=headers,
+                    cookies=req.cookies,
+                )
+            return await client.post(
                 req.path,
                 json=req.body,
                 headers=headers,
                 cookies=req.cookies,
             )
-        return await self._client.get(
+        return await client.get(
             req.path,
             headers=headers,
             cookies=req.cookies,
