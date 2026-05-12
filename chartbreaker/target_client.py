@@ -15,6 +15,7 @@ requires explicit CLI flags handled in chartbreaker.cli, not here.
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 import time
@@ -37,7 +38,10 @@ _COPILOT_PATH = (
     "/interface/modules/custom_modules/oe-module-clinical-copilot"
     f"/public/index.php?site={TARGET_SITE}"
 )
-_LOGIN_PATH = f"/interface/login/login.php?site={TARGET_SITE}"
+# /interface/login/login.php only renders the form; the actual auth handler
+# is /interface/main/main_screen.php?auth=login (confirmed in
+# templates/login/partials/html/login_details.html.twig form action).
+_LOGIN_PATH = f"/interface/main/main_screen.php?auth=login&site={TARGET_SITE}"
 
 # Patient chart page that triggers the Co-Pilot module's Bootstrap render
 # (RenderEvent::EVENT_SECTION_LIST_RENDER_AFTER fires here). The bootstrap
@@ -132,10 +136,10 @@ class TargetClient:
             response = await self._client.post(
                 _LOGIN_PATH,
                 data={
+                    "new_login_session_management": "1",
+                    "languageChoice": "1",
                     "authUser": user,
                     "clearPass": password,
-                    "authProvider": "Default",
-                    "languageChoice": "1",
                 },
             )
         except httpx.RequestError as exc:
@@ -145,6 +149,15 @@ class TargetClient:
             raise TargetUnreachableError(
                 f"login returned {response.status_code}; first 200 chars: "
                 f"{response.text[:200]!r}"
+            )
+
+        # OpenEMR returns 200 on bad credentials too (re-renders the login form).
+        # Detect failure by spotting the session-timeout / login-screen marker.
+        if "login_screen.php?error" in response.text or "timed_out = true" in response.text:
+            raise TargetUnreachableError(
+                "login appeared to succeed (HTTP 200) but response redirects to "
+                "login_screen — credentials are likely wrong or the target rejected "
+                "the session. Check CHARTBREAKER_TARGET_USER / CHARTBREAKER_TARGET_PASSWORD."
             )
 
         self._authenticated = True
@@ -215,24 +228,44 @@ class TargetClient:
         if body is not None and isinstance(body.get("csrf_token"), str):
             self._csrf_token = body["csrf_token"]
 
+        # The Co-Pilot's success envelope (CopilotController:494) looks like:
+        #   {"context": {...},
+        #    "llm": {"status": "success", "structured": {...},
+        #            "model": "...", "prompt_tokens": N, "completion_tokens": N,
+        #            "source_verification": "pass|rewrite|reject",
+        #            "domain_verification": "pass|reject", ...},
+        #    "phase": "llm"}
+        # The target does NOT expose the pre-verifier raw model output; only
+        # the post-verifier `structured` block is available. We map it into
+        # both raw_model_output and post_verifier_output and capture the
+        # PHP-verifier verdicts as JSON in audit_log_id for the Judge to read.
+        llm_block: dict[str, Any] = (
+            body.get("llm", {}) if isinstance(body, dict) else {}
+        )
+        structured = llm_block.get("structured") if isinstance(llm_block, dict) else None
+        structured_json = json.dumps(structured) if isinstance(structured, dict) else None
+
+        php_verifier_summary = {
+            "source_verification": llm_block.get("source_verification") if isinstance(llm_block, dict) else None,
+            "domain_verification": llm_block.get("domain_verification") if isinstance(llm_block, dict) else None,
+            "llm_status": llm_block.get("status") if isinstance(llm_block, dict) else None,
+            "failure_reason": llm_block.get("failure_reason") if isinstance(llm_block, dict) else None,
+        }
+
         return TargetResponse(
             attempt_id=attempt.attempt_id,
             http_status=response.status_code,
-            raw_model_output=(body.get("raw_model_output") if body else None),
-            post_verifier_output=(
-                body.get("summary")
-                if body is not None
-                else response.text[:2000] if response.text else None
-            ),
+            raw_model_output=structured_json,
+            post_verifier_output=structured_json
+            if structured_json is not None
+            else (response.text[:2000] if response.text else None),
             latency_ms=latency_ms,
-            prompt_tokens=(
-                body.get("usage", {}).get("prompt_tokens") if body else None
-            ),
-            completion_tokens=(
-                body.get("usage", {}).get("completion_tokens") if body else None
-            ),
-            audit_log_id=(body.get("audit_log_id") if body else None),
-            target_version=(body.get("model", "unknown") if body else "unknown"),
+            prompt_tokens=llm_block.get("prompt_tokens") if isinstance(llm_block, dict) else None,
+            completion_tokens=llm_block.get("completion_tokens") if isinstance(llm_block, dict) else None,
+            # Re-use audit_log_id to pass the PHP verifier summary to the Judge.
+            # Phase 2 should split this into a proper dedicated field.
+            audit_log_id=json.dumps(php_verifier_summary),
+            target_version=llm_block.get("model", "unknown") if isinstance(llm_block, dict) else "unknown",
         )
 
     async def _dispatch_copilot_briefing(self, attempt: AttackAttempt) -> httpx.Response:
