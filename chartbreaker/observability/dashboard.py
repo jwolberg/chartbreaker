@@ -194,6 +194,21 @@ def _render_header(db_path: str) -> None:
         layout="wide",
         page_icon="🔍",
     )
+    # Bump section-title and expander-summary font size by 50% so the
+    # dashboard's hierarchy is easier to scan. Streamlit's default
+    # subheader (h3) ≈ 1.25rem; expander summary ≈ 1rem. Targets are
+    # scoped via data-testid attributes so we don't impact the
+    # legend tables or other body content.
+    st.markdown(
+        """
+<style>
+section.main h2 { font-size: 2.25rem !important; }
+section.main h3 { font-size: 1.875rem !important; }
+[data-testid="stExpander"] details summary p { font-size: 1.5rem !important; font-weight: 600; }
+</style>
+""",
+        unsafe_allow_html=True,
+    )
     st.title("ChartBreaker — Observability Dashboard")
     st.caption(
         f"Local read-only view of `{db_path}`. "
@@ -1087,11 +1102,16 @@ def main() -> None:
                 "verdict-mix and open-vulns panels."
             )
         _render_summary_cards(attempts, verdicts, costs)
+
+        # Top of the page: the answers the operator is here for —
+        # "what's broken?" (open vulns) and "what did it cost?" (costs).
+        _render_open_vulns(verdicts_searched, attempts)
+        _render_costs(costs)
+
+        # Followed by the aggregate "how the run shaped up" panels.
         _render_coverage(attempts)
         _render_verdict_breakdown(verdicts_searched)
         _render_severity(verdicts_searched)
-        _render_open_vulns(verdicts_searched, attempts)
-        _render_costs(costs)
         _render_agent_timeline(events_all, run_id)
 
         with st.expander("Raw runs table"):
