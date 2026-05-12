@@ -193,6 +193,62 @@ def test_rationale_filter_handles_empty_dataframe() -> None:
     assert dashboard._apply_rationale_filter(df, "anything").empty
 
 
+def test_check_api_key_prereqs_lists_missing_vars(monkeypatch: "pytest.MonkeyPatch") -> None:
+    # Wipe everything required so we can see the full failure list.
+    for var in (
+        "CHARTBREAKER_TARGET_USER",
+        "CHARTBREAKER_TARGET_PASSWORD",
+        "OPENROUTER_API_KEY",
+        "OPENAI_API_KEY",
+    ):
+        monkeypatch.delenv(var, raising=False)
+    missing = dashboard._check_api_key_prereqs(semantic_judge=True)
+    assert "CHARTBREAKER_TARGET_USER" in missing
+    assert "CHARTBREAKER_TARGET_PASSWORD" in missing
+    assert "OPENROUTER_API_KEY" in missing
+    assert "OPENAI_API_KEY" in missing
+
+
+def test_check_api_key_prereqs_skips_openai_when_semantic_judge_off(
+    monkeypatch: "pytest.MonkeyPatch",
+) -> None:
+    monkeypatch.setenv("CHARTBREAKER_TARGET_USER", "x")
+    monkeypatch.setenv("CHARTBREAKER_TARGET_PASSWORD", "x")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "x")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    # Semantic Judge off → OpenAI key not required.
+    assert dashboard._check_api_key_prereqs(semantic_judge=False) == []
+    # Semantic Judge on → OpenAI key required.
+    assert dashboard._check_api_key_prereqs(semantic_judge=True) == ["OPENAI_API_KEY"]
+
+
+def test_detect_in_flight_run_returns_none_when_no_runs(tmp_path: Path) -> None:
+    db_path = tmp_path / "empty.sqlite"
+    # Initialize an empty store schema.
+    with ObservabilityStore(db_path=db_path, trace_path=tmp_path / "t.jsonl"):
+        pass
+    assert dashboard._detect_in_flight_run(str(db_path)) is None
+
+
+def test_detect_in_flight_run_returns_open_run(tmp_path: Path) -> None:
+    db_path = _make_populated_db(tmp_path)
+    # The populated DB ended_at-flagged its run; mark it open again.
+    conn = sqlite3.connect(str(db_path))
+    conn.execute("UPDATE runs SET ended_at = NULL")
+    conn.commit()
+    conn.close()
+
+    row = dashboard._detect_in_flight_run(str(db_path))
+    assert row is not None
+    assert row["run_id"] == "run-1"
+    assert row["ended_at"] is None if "ended_at" in row else True  # column omitted in select is fine
+
+
+def test_detect_in_flight_run_handles_missing_db_file(tmp_path: Path) -> None:
+    """If the DB file doesn't exist yet (fresh install), no in-flight run."""
+    assert dashboard._detect_in_flight_run(str(tmp_path / "does-not-exist.sqlite")) is None
+
+
 def test_live_activity_query_returns_recent_events(tmp_path: Path) -> None:
     """The live tab pulls the latest N agent_events ordered by event_id desc."""
     db_path = _make_populated_db(tmp_path)

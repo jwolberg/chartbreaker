@@ -48,6 +48,18 @@ if str(_REPO_ROOT) not in sys.path:
 import pandas as pd
 import streamlit as st
 
+import os
+import subprocess
+
+# Load .env from the repo root before anything else reads os.environ.
+# Streamlit launches this script directly (not via the CLI), so the
+# CHARTBREAKER_TARGET_USER / *_API_KEY / etc. vars otherwise wouldn't be
+# visible to the run-test prereq check or to the subprocess we launch.
+from dotenv import load_dotenv as _load_dotenv
+
+_DOTENV_PATH = Path(__file__).resolve().parents[2] / ".env"
+_load_dotenv(_DOTENV_PATH)
+
 from chartbreaker.config import RUNS_SQLITE
 
 
@@ -332,6 +344,193 @@ makes is captured in the observability store this dashboard reads from.
                 ),
             },
         )
+
+
+# ---------------------------------------------------------------------------
+# Run-test button — local-only operator control to launch a live sweep.
+# Subprocess-based: shells out to `python -m chartbreaker.cli run-mvp-loop`
+# and returns immediately. The Live activity tab follows progress through
+# the existing 90s meta-refresh because both the CLI and the dashboard
+# read/write the same observability/runs.sqlite store.
+# ---------------------------------------------------------------------------
+
+# Repo root, derived from this file's location. Used both for cwd= when
+# launching the CLI and to locate the .env file the CLI loads internally.
+_REPO_ROOT_FOR_RUNNER = Path(__file__).resolve().parents[2]
+_RUNNER_LOG_DIR = _REPO_ROOT_FOR_RUNNER / "observability"
+
+
+def _detect_in_flight_run(db_path: str) -> dict | None:
+    """Return the runs.sqlite row of the most recent run with ended_at IS NULL.
+
+    Used to gray out the button while a sweep is in progress so a
+    double-click can't start a concurrent run (which would race the
+    SQLite write path even with WAL).
+    """
+    if not Path(db_path).exists():
+        return None
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            "SELECT run_id, cli_command, operator, started_at "
+            "FROM runs "
+            "WHERE ended_at IS NULL "
+            "ORDER BY started_at DESC LIMIT 1"
+        ).fetchone()
+    finally:
+        conn.close()
+    return dict(row) if row else None
+
+
+def _check_api_key_prereqs(*, semantic_judge: bool) -> list[str]:
+    """Return a list of missing required env vars for the chosen flags."""
+    missing: list[str] = []
+    for var in ("CHARTBREAKER_TARGET_USER", "CHARTBREAKER_TARGET_PASSWORD"):
+        if not os.environ.get(var):
+            missing.append(var)
+    # Specialists need OpenRouter; semantic Judge + Orchestrator need OpenAI.
+    if not os.environ.get("OPENROUTER_API_KEY"):
+        missing.append("OPENROUTER_API_KEY")
+    if semantic_judge and not os.environ.get("OPENAI_API_KEY"):
+        missing.append("OPENAI_API_KEY")
+    return missing
+
+
+def _launch_run(
+    *,
+    semantic_judge: bool,
+    trace_llm_io: bool,
+    log_file: bool,
+) -> subprocess.Popen:
+    """Shell out to `python -m chartbreaker.cli run-mvp-loop ...`.
+
+    Returns the Popen handle. Caller does not block on it — the CLI
+    writes incrementally to runs.sqlite, and the Live tab tails the
+    same store via auto-refresh.
+    """
+    cmd: list[str] = [
+        sys.executable,  # match the interpreter Streamlit is running under
+        "-m",
+        "chartbreaker.cli",
+        "run-mvp-loop",
+    ]
+    if semantic_judge:
+        cmd.append("--semantic-judge")
+    if trace_llm_io:
+        cmd.append("--trace-llm-io")
+    if log_file:
+        cmd.append("--log-file")
+
+    # Capture stdout/stderr to a dashboard-launched log so the operator can
+    # tail it from a terminal if needed. The CLI itself also writes its
+    # observability/run-<id>.log via --log-file.
+    launcher_log = _RUNNER_LOG_DIR / "dashboard-launches.log"
+    launcher_log.parent.mkdir(parents=True, exist_ok=True)
+    fh = launcher_log.open("ab")
+    fh.write(b"\n=== launched from dashboard ===\n")
+    fh.write(" ".join(cmd).encode() + b"\n")
+    fh.flush()
+
+    return subprocess.Popen(
+        cmd,
+        cwd=str(_REPO_ROOT_FOR_RUNNER),
+        stdout=fh,
+        stderr=subprocess.STDOUT,
+        # Detach so a Streamlit page reload doesn't kill the child.
+        start_new_session=True,
+    )
+
+
+def _render_run_test_control(db_path: str) -> None:
+    """Sidebar control: launch chartbreaker run-mvp-loop in a subprocess.
+
+    Per docs/PROJECT_STRATEGY.md § Operating Model § Hosting Topology,
+    the dashboard is local-only by design — this button only exists
+    when the operator is running Streamlit on their own machine.
+    """
+    st.sidebar.header("🚀 Run test")
+
+    in_flight = _detect_in_flight_run(db_path)
+    if in_flight is not None:
+        st.sidebar.warning(
+            f"A run is already in progress: `{in_flight['run_id'][:8]}…` "
+            f"(started {str(in_flight['started_at'])[:19]}). "
+            "Wait for it to finish before launching another."
+        )
+        # Still let the operator see what was selected, but disable the button.
+
+    semantic_judge = st.sidebar.checkbox(
+        "Semantic Judge (`--semantic-judge`)",
+        value=True,
+        help=(
+            "Layer the OpenAI gpt-5.4-nano semantic verdict on top of the "
+            "deterministic verifier replay. Requires `OPENAI_API_KEY`."
+        ),
+        key="run_semantic_judge",
+        disabled=in_flight is not None,
+    )
+    trace_llm_io = st.sidebar.checkbox(
+        "LLM payload trace (`--trace-llm-io`)",
+        value=True,
+        help=(
+            "Capture every chat() call's full request + response to "
+            "`observability/llm-trace-<run_id>.jsonl`. Off by default in "
+            "CI; on by default here because it's useful for the drill-down."
+        ),
+        key="run_trace_llm_io",
+        disabled=in_flight is not None,
+    )
+    log_file = st.sidebar.checkbox(
+        "Verbose log file (`--log-file`)",
+        value=True,
+        help=(
+            "Tee DEBUG-level Python logs to "
+            "`observability/run-<run_id>.log` for the duration of the run."
+        ),
+        key="run_log_file",
+        disabled=in_flight is not None,
+    )
+
+    missing = _check_api_key_prereqs(semantic_judge=semantic_judge)
+    if missing:
+        st.sidebar.error(
+            "Missing required env vars: "
+            + ", ".join(f"`{m}`" for m in missing)
+            + ". Fill them in `.env` before launching."
+        )
+
+    button_label = "🚀 Launch run-mvp-loop"
+    button_disabled = in_flight is not None or bool(missing)
+    if st.sidebar.button(
+        button_label,
+        disabled=button_disabled,
+        use_container_width=True,
+        help=(
+            "Spawns `python -m chartbreaker.cli run-mvp-loop` as a "
+            "background subprocess. The Live activity tab will show the "
+            "new run's events on the next auto-refresh."
+        ),
+    ):
+        proc = _launch_run(
+            semantic_judge=semantic_judge,
+            trace_llm_io=trace_llm_io,
+            log_file=log_file,
+        )
+        st.sidebar.success(
+            f"Run launched as PID {proc.pid}. Switch to the "
+            "**📡 Live activity** tab to follow it. The first agent_events "
+            "row should appear in under 10 seconds."
+        )
+        # Force a rerun so the in-flight indicator picks up the new row
+        # as soon as the CLI writes it.
+        st.rerun()
+
+    st.sidebar.caption(
+        "Local-only by design (per docs/PROJECT_STRATEGY.md § Operating "
+        "Model § Hosting Topology). This button doesn't exist on the CI "
+        "release-artifact path."
+    )
 
 
 def _render_run_picker(runs_df: pd.DataFrame) -> str | None:
@@ -1665,9 +1864,19 @@ def main() -> None:
     )
     events_all = _load_table(db_path, "SELECT * FROM agent_events ORDER BY created_at")
 
+    # Sidebar: run-test launch button first (always visible, even on a
+    # fresh install with zero runs), then the run picker, then the
+    # rationale search.
+    _render_run_test_control(db_path)
+    st.sidebar.divider()
+
     run_id = _render_run_picker(runs)
     if run_id is None:
-        st.warning("No runs recorded yet.")
+        st.warning(
+            "No runs recorded yet. Click **🚀 Launch run-mvp-loop** in the "
+            "sidebar to start one, or run `chartbreaker run-mvp-loop` from "
+            "a terminal."
+        )
         st.stop()
 
     rationale_needle = _render_rationale_search()
