@@ -681,6 +681,48 @@ def _build_parser() -> argparse.ArgumentParser:
     propose_p.add_argument("--json", action="store_true", help="Emit JSON to stdout.")
     propose_p.add_argument("--verbose", action="store_true")
 
+    # Auto-run loop (dashboard "Start auto-run" subprocess target). Bypasses
+    # the Phase-4 human-approval gate intentionally; hard-capped on iterations
+    # and total USD spend; honors an out-of-band stop-file the Streamlit page
+    # touches via the "Stop auto-run" button. See chartbreaker/auto_run.py.
+    auto_p = sub.add_parser(
+        "auto-run-loop",
+        help="Continuously propose → auto-approve → execute until stopped.",
+    )
+    auto_p.add_argument(
+        "--max-iterations",
+        type=int,
+        default=5,
+        help="Hard ceiling on how many propose→execute cycles to run.",
+    )
+    auto_p.add_argument(
+        "--max-cost-usd",
+        type=float,
+        default=5.0,
+        help="Hard ceiling on total LLM cost across all iterations.",
+    )
+    auto_p.add_argument(
+        "--proposals-per-iteration",
+        type=int,
+        default=8,
+        help="How many proposals to auto-approve per iteration.",
+    )
+    auto_p.add_argument(
+        "--stop-file",
+        default=None,
+        help="Touch this path to stop the loop between iterations.",
+    )
+    auto_p.add_argument(
+        "--operator",
+        default=f"laptop:{getpass.getuser()}",
+    )
+    auto_p.add_argument(
+        "--semantic-judge",
+        action="store_true",
+        help="Enable the semantic LLM Judge for every auto-run iteration.",
+    )
+    auto_p.add_argument("--verbose", action="store_true")
+
     # P5-T1 — post-run audit. Reads runs.sqlite, surfaces safety / signal
     # anomalies. Six checks defined in chartbreaker/audit.py.
     audit_p = sub.add_parser(
@@ -756,6 +798,23 @@ def main() -> None:
                     f"budget={p.mutation_budget} ${p.est_cost_usd:.4f} | "
                     f"{p.rationale}"
                 )
+    elif args.cmd == "auto-run-loop":
+        from chartbreaker import auto_run as _auto_run
+
+        stop_file = args.stop_file or str(_auto_run.default_stop_file_path())
+        final = _auto_run.auto_run_loop_sync(
+            max_iterations=int(args.max_iterations),
+            max_cost_usd=float(args.max_cost_usd),
+            proposals_per_iteration=int(args.proposals_per_iteration),
+            stop_file=stop_file,
+            operator=args.operator,
+            enable_semantic_judge=getattr(args, "semantic_judge", False),
+        )
+        print(
+            f"auto-run finished — iterations={final.iterations_done}/"
+            f"{final.max_iterations} cost=${final.cost_so_far_usd:.4f} "
+            f"reason={final.stopped_reason}"
+        )
     elif args.cmd == "audit-run":
         # Late import keeps cli.py import-light when this subcommand is unused.
         from chartbreaker import audit as _audit

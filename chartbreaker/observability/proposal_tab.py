@@ -20,10 +20,13 @@ from __future__ import annotations
 import getpass
 import logging
 import os
+import subprocess
+import sys
 from pathlib import Path
 
 import streamlit as st
 
+from chartbreaker import auto_run as _auto_run
 from chartbreaker.config import TRACES_JSONL
 from chartbreaker.observability.store import ObservabilityStore
 from chartbreaker.orchestrator import proposal_harness
@@ -178,6 +181,22 @@ def _render_header(db_path: str) -> None:
         )
 
 
+def _on_check_all(*, pending_ids: list[str]) -> None:
+    """Mirror the master 'Check all' state into every per-row checkbox.
+
+    Reads the new master state from ``st.session_state[_check_all_key]``
+    and writes it to each row's ``prop_check_<id>`` key so Streamlit's
+    next render reflects the bulk change. Unchecks all when the master
+    is toggled off — matches the "select all / deselect all" idiom.
+    """
+    new_value = bool(st.session_state.get(_CHECK_ALL_KEY, False))
+    for pid in pending_ids:
+        st.session_state[f"prop_check_{pid}"] = new_value
+
+
+_CHECK_ALL_KEY = "prop_check_all"
+
+
 def _render_pending(db_path: str) -> list[str]:
     """Render the pending queue. Returns the list of checked proposal_ids."""
     with _open_store(db_path) as store:
@@ -190,7 +209,29 @@ def _render_pending(db_path: str) -> list[str]:
         )
         return []
 
-    st.write(f"**{len(pending)} pending proposal(s)** — review and select:")
+    pending_ids = [p.proposal_id for p in pending]
+
+    # Master "Check all" — toggles every per-row checkbox in one click.
+    # Visually anchored to the count line so the operator sees the bulk
+    # action sitting next to the proposal list it controls.
+    header_cols = st.columns([3, 1])
+    with header_cols[0]:
+        st.write(f"**{len(pending)} pending proposal(s)** — review and select:")
+    with header_cols[1]:
+        # No `value=` — session_state under `key=` already provides the
+        # value, AND the on_change callback writes to per-row session
+        # state. Passing `value=` with `key=` triggers Streamlit's
+        # "set twice" warning the moment a callback mutates state.
+        st.checkbox(
+            "Check all",
+            key=_CHECK_ALL_KEY,
+            on_change=_on_check_all,
+            kwargs={"pending_ids": pending_ids},
+            help=(
+                "Toggle every proposal in the queue. Untick to clear all. "
+                "Individual rows can still be unchecked after."
+            ),
+        )
 
     selected_ids: list[str] = []
     for p in pending:
@@ -228,9 +269,14 @@ def _render_pending(db_path: str) -> list[str]:
                     help="Edits persist immediately to SQLite.",
                 )
             with bot_mid:
+                # No `value=` here on purpose. When a widget has both
+                # `key=` AND `value=` AND something else (the master
+                # "Check all" callback) writes to that session_state
+                # key, Streamlit raises "widget value set via Session
+                # State API + default value." Session_state under the
+                # key already drives initial render — let it.
                 checked = st.checkbox(
                     "Include in next launch",
-                    value=st.session_state.get(f"prop_check_{p.proposal_id}", False),
                     key=f"prop_check_{p.proposal_id}",
                     help=(
                         "Ephemeral selection — does NOT persist across restarts. "
@@ -332,12 +378,256 @@ def _render_history(db_path: str) -> None:
 
 
 # ----------------------------------------------------------------------
+# Auto-run mode (Phase 6)
+#
+# Subprocess-based — same pattern as the "Run test" sidebar button. The
+# Streamlit page only operates the lifecycle (start / observe / stop);
+# the actual loop lives in chartbreaker/auto_run.py and is driven by
+# `python -m chartbreaker.cli auto-run-loop`. State persists to
+# observability/auto-run-state.json so the page can render a status
+# banner without polling the process.
+#
+# Auto-run bypasses the Phase-4 human-approval gate by design. Hard
+# caps are mandatory (HARD_CAP_USD + HARD_CAP_ITERATIONS in
+# chartbreaker/auto_run.py) so a runaway loop can't drain the LLM
+# budget. Stop is decoupled via a touch-file the CLI polls between
+# iterations.
+# ----------------------------------------------------------------------
+
+
+_AUTO_RUN_LOG_DIR = Path(__file__).resolve().parents[2] / "observability"
+
+
+def _spawn_auto_run(
+    *,
+    max_iterations: int,
+    max_cost_usd: float,
+    proposals_per_iteration: int,
+    semantic_judge: bool,
+) -> subprocess.Popen:
+    """Shell out to `python -m chartbreaker.cli auto-run-loop ...`.
+
+    Detached so a Streamlit page reload (or a dashboard process restart)
+    doesn't kill the loop. The CLI writes incrementally to runs.sqlite
+    and to auto-run-state.json; this page tails both.
+    """
+    cmd: list[str] = [
+        sys.executable,
+        "-m",
+        "chartbreaker.cli",
+        "auto-run-loop",
+        "--max-iterations",
+        str(max_iterations),
+        "--max-cost-usd",
+        f"{max_cost_usd:.2f}",
+        "--proposals-per-iteration",
+        str(proposals_per_iteration),
+    ]
+    if semantic_judge:
+        cmd.append("--semantic-judge")
+
+    log_path = _AUTO_RUN_LOG_DIR / "auto-run-launches.log"
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    fh = log_path.open("ab")
+    fh.write(b"\n=== auto-run launched from dashboard ===\n")
+    fh.write(" ".join(cmd).encode() + b"\n")
+    fh.flush()
+    return subprocess.Popen(
+        cmd,
+        cwd=str(_AUTO_RUN_LOG_DIR.parent),
+        stdout=fh,
+        stderr=subprocess.STDOUT,
+        start_new_session=True,
+    )
+
+
+def _on_start_auto_run(*, db_path: str) -> None:
+    if _auto_run.is_auto_run_active():
+        st.session_state["_prop_error"] = (
+            "Auto-run is already active. Stop it before starting a new one."
+        )
+        return
+    missing = _check_api_key_prereqs()
+    if missing:
+        st.session_state["_prop_error"] = (
+            "Cannot start auto-run — missing env vars: "
+            + ", ".join(f"`{m}`" for m in missing)
+        )
+        return
+    try:
+        proc = _spawn_auto_run(
+            max_iterations=int(st.session_state.get("auto_run_iterations", 5)),
+            max_cost_usd=float(st.session_state.get("auto_run_max_cost", 5.0)),
+            proposals_per_iteration=int(
+                st.session_state.get("auto_run_proposals", 8)
+            ),
+            semantic_judge=bool(
+                st.session_state.get("auto_run_semantic", False)
+            ),
+        )
+    except Exception as exc:
+        logger.exception("auto-run spawn failed")
+        st.session_state["_prop_error"] = f"Failed to start auto-run: {exc}"
+        return
+    st.session_state["_prop_info"] = (
+        f"Auto-run started — pid {proc.pid}. Status banner will appear above "
+        "after the next refresh."
+    )
+
+
+def _on_stop_auto_run() -> None:
+    state = _auto_run.AutoRunState.load()
+    if state is None:
+        st.session_state["_prop_error"] = "No auto-run state file to stop."
+        return
+    Path(state.stop_file).touch()
+    st.session_state["_prop_info"] = (
+        "Stop requested. The loop will exit after the current iteration "
+        "finishes (≤ a few seconds)."
+    )
+
+
+@st.fragment(run_every="30s")
+def _render_auto_run_panel(db_path: str) -> None:
+    """Auto-run controls + status banner. Always rendered at the top.
+
+    Decorated with ``st.fragment(run_every="30s")`` so the panel
+    self-refreshes on a 30-second cadence WITHOUT triggering a full page
+    reload. The old approach (a `<meta http-equiv="refresh">` tag) worked
+    but reloaded the entire dashboard, which yanks st.tabs() back to its
+    first tab and kicks the operator off Plan Next Run every 30 seconds
+    while auto-run is active. Fragment-level reruns leave the tab state
+    alone.
+
+    Polling at 30s when no auto-run is active is essentially free — just
+    a missing-file check on AutoRunState.load() — so the timer doesn't
+    need to be conditional.
+    """
+    state = _auto_run.AutoRunState.load()
+    active = state is not None and not state.stopped and _auto_run._is_pid_alive(state.pid)
+
+    if active and state is not None:
+        st.markdown(
+            f"### 🔁 Auto-run iteration "
+            f"**{state.iterations_done}/{state.max_iterations}** · "
+            f"last run `{(state.last_run_id or '—')[:8]}` · "
+            f"cost **${state.cost_so_far_usd:.4f}** / ${state.max_cost_usd:.2f}"
+        )
+        st.progress(
+            min(1.0, state.iterations_done / max(1, state.max_iterations)),
+            text="iteration progress",
+        )
+        if state.notes:
+            with st.expander("Iteration notes"):
+                for n in state.notes[-10:]:
+                    st.markdown(f"- {n}")
+        cols = st.columns([1, 3])
+        with cols[0]:
+            st.button(
+                "🛑 Stop auto-run",
+                on_click=_on_stop_auto_run,
+                use_container_width=True,
+                help="Touches the stop-file. The loop exits between iterations.",
+            )
+        with cols[1]:
+            st.caption(
+                "Banner auto-refreshes every 30s (fragment-scoped — won't "
+                "lose your tab). Stop is honored at the next iteration "
+                "boundary, not mid-batch."
+            )
+    else:
+        # Show the most recent finished state if there is one, so the
+        # operator can confirm a run finished + see why it stopped.
+        if state is not None and state.stopped:
+            st.info(
+                f"Last auto-run finished — iterations="
+                f"{state.iterations_done}/{state.max_iterations} · "
+                f"cost ${state.cost_so_far_usd:.4f} · "
+                f"reason: {state.stopped_reason}"
+            )
+
+        with st.expander("🔁 Auto-run mode (advanced)", expanded=False):
+            st.warning(
+                "Auto-run bypasses the human-approval gate. Hard caps below "
+                "are enforced; the loop will not exceed them. Inspect the "
+                "runs after — `chartbreaker audit-run` flags anomalies."
+            )
+            row = st.columns(3)
+            with row[0]:
+                st.number_input(
+                    "Max iterations",
+                    min_value=1,
+                    max_value=_auto_run.HARD_CAP_ITERATIONS,
+                    value=int(st.session_state.get("auto_run_iterations", 5)),
+                    key="auto_run_iterations",
+                    step=1,
+                    help=(
+                        f"Hard cap: {_auto_run.HARD_CAP_ITERATIONS}. "
+                        "Each iteration generates proposals, auto-approves "
+                        "every row, and launches the batch."
+                    ),
+                )
+            with row[1]:
+                st.number_input(
+                    "Max cost (USD)",
+                    min_value=0.50,
+                    max_value=_auto_run.HARD_CAP_USD,
+                    value=float(st.session_state.get("auto_run_max_cost", 5.0)),
+                    step=0.50,
+                    key="auto_run_max_cost",
+                    help=(
+                        f"Hard cap: ${_auto_run.HARD_CAP_USD:.0f}. Loop "
+                        "exits before launching an iteration that would "
+                        "exceed this total."
+                    ),
+                )
+            with row[2]:
+                st.number_input(
+                    "Proposals / iteration",
+                    min_value=1,
+                    max_value=16,
+                    value=int(st.session_state.get("auto_run_proposals", 8)),
+                    step=1,
+                    key="auto_run_proposals",
+                    help="How many proposals to auto-approve each cycle.",
+                )
+            st.checkbox(
+                "Use semantic Judge during auto-run",
+                value=bool(st.session_state.get("auto_run_semantic", False)),
+                key="auto_run_semantic",
+                help=(
+                    "Costs more (extra LLM call per attempt) but produces "
+                    "the verifier↔semantic disagreement signal."
+                ),
+            )
+            st.button(
+                "▶️ Start auto-run",
+                on_click=_on_start_auto_run,
+                kwargs={"db_path": db_path},
+                use_container_width=True,
+                type="primary",
+            )
+
+
+# ----------------------------------------------------------------------
 # Public entry point — wired from dashboard.py
 # ----------------------------------------------------------------------
 
 
+@st.fragment
 def render(db_path: str) -> None:
-    """Render the Plan Next Run tab against the given SQLite path."""
+    """Render the Plan Next Run tab against the given SQLite path.
+
+    Wrapped in ``@st.fragment`` so widget interactions (Check-all,
+    per-row checkboxes, Generate / Launch / Reject / Start auto-run
+    buttons) rerun ONLY this fragment instead of the full dashboard
+    script. Without it, every click triggers a top-level script rerun
+    and ``st.tabs()`` defaults back to its first tab (Dashboard) —
+    yanking the operator out of the Plan Next Run tab on every action.
+
+    Fragment was added in Streamlit 1.33; project pin is 1.47.1.
+    """
+    _render_auto_run_panel(db_path)
     _render_header(db_path)
     selected_ids = _render_pending(db_path)
     _render_launch_footer(db_path, selected_ids)
