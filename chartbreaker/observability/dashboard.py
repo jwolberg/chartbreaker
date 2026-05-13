@@ -212,6 +212,50 @@ def _decorate(value: str | None, mapping: dict[str, str]) -> str:
     return f"{emoji} {value}" if emoji else value
 
 
+# Risk tier per verdict / severity value. Drives the colored metric on the
+# attempt drill-down page so the operator can see "danger" at a glance.
+# `danger` = red, `warn` = orange/amber, `ok` = green, `neutral` = gray.
+_VERDICT_RISK_TIER: dict[str, str] = {
+    "fail": "danger",
+    "partial": "warn",
+    "rewrite": "warn",
+    "pass": "ok",
+    "not_run": "neutral",
+}
+_SEVERITY_RISK_TIER: dict[str, str] = {
+    "critical": "danger",
+    "high": "danger",
+    "medium": "warn",
+    "low": "neutral",
+    "info": "neutral",
+}
+_RISK_TIER_COLOR: dict[str, str] = {
+    "danger": "#d32f2f",   # red — same as SEVERITY_COLOR["critical"]
+    "warn": "#f57c00",     # orange — same as SEVERITY_COLOR["high"]
+    "ok": "#388e3c",       # green — same as VERDICT_COLOR["pass"]
+    "neutral": "#9e9e9e",  # gray
+}
+
+
+def _render_colored_metric(container, label: str, value: str, tier: str) -> None:
+    """Render a metric-style label + colored value via HTML.
+
+    Streamlit's built-in `st.metric` does not accept colors on its value, so
+    we approximate the layout with `unsafe_allow_html=True`. Visually
+    matches the adjacent `st.metric` cards on the attempt drill-down page.
+    """
+    color = _RISK_TIER_COLOR.get(tier, _RISK_TIER_COLOR["neutral"])
+    # Inline styling mirrors Streamlit's metric typography (label small +
+    # value large). Kept ASCII-only / single line so it renders identically
+    # across browsers and Streamlit theme settings.
+    container.markdown(
+        f"<div style='font-size:0.85rem;color:rgba(160,160,160,0.95);'>{label}</div>"
+        f"<div style='font-size:1.75rem;font-weight:600;color:{color};line-height:1.2;'>"
+        f"{value}</div>",
+        unsafe_allow_html=True,
+    )
+
+
 # Verdict-field explainers (used in metric help= and rendered subheaders).
 HELP_VERIFIER_REPLAY = (
     "Pass / fail from re-running the Co-Pilot's PHP verifier logic in Python "
@@ -1296,8 +1340,20 @@ def _render_attempt_detail(db_path: str, attempt_id: str) -> None:
         v = verdict_df.iloc[0]
         c = st.columns(4)
         c[0].metric("Verifier replay", v["verifier_replay"])
-        c[1].metric("Semantic", v["semantic"])
-        c[2].metric("Severity", v["severity"])
+        # Colorize semantic + severity per their risk tier so the operator
+        # sees danger/warn/ok at a glance instead of reading text.
+        _render_colored_metric(
+            c[1],
+            "Semantic",
+            str(v["semantic"]),
+            _VERDICT_RISK_TIER.get(str(v["semantic"]), "neutral"),
+        )
+        _render_colored_metric(
+            c[2],
+            "Severity",
+            str(v["severity"]),
+            _SEVERITY_RISK_TIER.get(str(v["severity"]), "neutral"),
+        )
         c[3].metric("Action", v["recommended_action"])
         st.caption(f"Judge model: `{v['judge_model']}`")
         st.markdown("**Rationale:**")

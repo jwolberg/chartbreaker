@@ -146,7 +146,7 @@ def test_audit_run_clean_run_has_no_findings(store):
     report = audit.audit_run(run_id, db_path=_db_path(store))
     assert report is not None
     assert report.ok
-    assert report.checks_run == 6
+    assert report.checks_run == 7
     assert report.findings == []
 
 
@@ -390,6 +390,73 @@ def test_severity_inversion_real_semantic_signal_not_flagged(store):
 
 
 # ---------------------------------------------------------------------------
+# Check 7 — Specialist failures
+# ---------------------------------------------------------------------------
+
+
+def _emit_specialist_failed(
+    store: ObservabilityStore,
+    run_id: str,
+    campaign_id: str,
+    subcategory: str,
+    error_type: str = "MultiTurnGenerationError",
+    error_message: str = "LLM returned non-JSON",
+) -> None:
+    """Helper: write a `specialist_failed` event the way cli.py does."""
+    store._emit_event(  # noqa: SLF001 — test-only access
+        run_id,
+        agent="red_team_lead",
+        event_type="specialist_failed",
+        campaign_id=campaign_id,
+        payload={
+            "subcategory_id": subcategory,
+            "error_type": error_type,
+            "error_message": error_message,
+        },
+    )
+
+
+def test_specialist_failure_clean(store):
+    run_id = _seed_run(store)
+    brief = _seed_campaign(store, run_id)
+    _seed_attempt(store, run_id, brief.campaign_id)
+    report = audit.audit_run(run_id, db_path=_db_path(store))
+    assert all(f.check != "specialist_failure" for f in report.findings)
+
+
+def test_specialist_failure_one_event_one_finding(store):
+    run_id = _seed_run(store)
+    brief = _seed_campaign(store, run_id, subcategory_id="1d")
+    _emit_specialist_failed(store, run_id, brief.campaign_id, "1d")
+    report = audit.audit_run(run_id, db_path=_db_path(store))
+    fails = [f for f in report.findings if f.check == "specialist_failure"]
+    assert len(fails) == 1
+    assert fails[0].severity == "warn"
+    assert fails[0].evidence["subcategory_id"] == "1d"
+    assert fails[0].evidence["error_type"] == "MultiTurnGenerationError"
+
+
+def test_specialist_failure_multiple_events(store):
+    run_id = _seed_run(store)
+    brief1 = _seed_campaign(store, run_id, subcategory_id="1d")
+    brief2 = _seed_campaign(store, run_id, subcategory_id="3a")
+    _emit_specialist_failed(store, run_id, brief1.campaign_id, "1d")
+    _emit_specialist_failed(
+        store,
+        run_id,
+        brief2.campaign_id,
+        "3a",
+        error_type="ValueError",
+        error_message="bad payload",
+    )
+    report = audit.audit_run(run_id, db_path=_db_path(store))
+    fails = [f for f in report.findings if f.check == "specialist_failure"]
+    assert len(fails) == 2
+    subs = sorted(f.evidence["subcategory_id"] for f in fails)
+    assert subs == ["1d", "3a"]
+
+
+# ---------------------------------------------------------------------------
 # audit_all
 # ---------------------------------------------------------------------------
 
@@ -493,5 +560,5 @@ def test_cli_json_mode_emits_dict(store, capsys, monkeypatch):
 
     payload = _json.loads(capsys.readouterr().out)
     assert payload["run_id"] == run_id
-    assert payload["checks_run"] == 6
+    assert payload["checks_run"] == 7
     assert any(f["check"] == "acl_breach" for f in payload["findings"])

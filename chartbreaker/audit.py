@@ -3,7 +3,7 @@
 Reads `observability/runs.sqlite` after a run completes and flags safety
 or signal-quality anomalies that a passing run might otherwise hide.
 
-Six checks, each implemented as a pure function `(conn, run_id) -> list
+Seven checks, each implemented as a pure function `(conn, run_id) -> list
 [AuditFinding]` so the module is trivial to unit-test against a tmp DB:
 
 1. ACL breach probe          — any attempt body.pid ∉ FIXTURE_PIDS
@@ -12,6 +12,7 @@ Six checks, each implemented as a pure function `(conn, run_id) -> list
 4. Verdict disagreement spike — >30% verifier_replay ↔ semantic mismatch
 5. Homogeneous verdicts      — all-pass / all-fail run with ≥6 attempts
 6. Severity inversion        — critical + verifier_replay=pass + canned/no-semantic
+7. Specialist failures       — any `specialist_failed` agent_event in this run
 
 The runner is stateless: audit findings are returned to the caller (CLI
 prints them; persistence to a sqlite table is a deliberate non-goal
@@ -323,6 +324,55 @@ def check_homogeneous_verdicts(
     ]
 
 
+def check_specialist_failures(
+    conn: sqlite3.Connection, run_id: str
+) -> list[AuditFinding]:
+    """A specialist raised mid-loop and the brief produced no attempt.
+
+    cli.py wraps `_run_one_brief` in try/except so one specialist failure
+    no longer aborts the whole run — but the failed brief still produces
+    zero attempts, which silently shrinks coverage. This check reads the
+    `specialist_failed` agent_events the wrapper emits and surfaces them
+    so the operator notices instead of just seeing a smaller verdict
+    table at the end.
+    """
+    rows = conn.execute(
+        """
+        SELECT campaign_id, payload
+        FROM agent_events
+        WHERE run_id = ? AND event_type = 'specialist_failed'
+        ORDER BY created_at
+        """,
+        (run_id,),
+    ).fetchall()
+    findings: list[AuditFinding] = []
+    for r in rows:
+        try:
+            payload = json.loads(r["payload"]) if r["payload"] else {}
+        except (json.JSONDecodeError, TypeError):
+            payload = {}
+        sub = payload.get("subcategory_id", "?")
+        etype = payload.get("error_type", "?")
+        emsg = payload.get("error_message", "")
+        findings.append(
+            AuditFinding(
+                check="specialist_failure",
+                severity="warn",
+                rationale=(
+                    f"Cat {sub} specialist raised {etype} mid-run "
+                    f"(brief executed → no attempt). Message: {emsg[:120]}"
+                ),
+                evidence={
+                    "campaign_id": r["campaign_id"],
+                    "subcategory_id": sub,
+                    "error_type": etype,
+                    "error_message": emsg,
+                },
+            )
+        )
+    return findings
+
+
 def check_severity_inversion(
     conn: sqlite3.Connection, run_id: str
 ) -> list[AuditFinding]:
@@ -380,6 +430,7 @@ _CHECK_FUNCTIONS: tuple = (
     check_disagreement_spike,
     check_homogeneous_verdicts,
     check_severity_inversion,
+    check_specialist_failures,
 )
 
 

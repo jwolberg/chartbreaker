@@ -258,13 +258,43 @@ async def run_mvp_loop(
                         # has_more() flipped to False between the check and
                         # the call (budget-exhausted halt). Stop cleanly.
                         break
-                    await _run_one_brief(
-                        brief,
-                        run_id,
-                        target,
-                        store,
-                        enable_semantic_judge=enable_semantic_judge,
-                    )
+                    try:
+                        await _run_one_brief(
+                            brief,
+                            run_id,
+                            target,
+                            store,
+                            enable_semantic_judge=enable_semantic_judge,
+                        )
+                    except Exception as exc:  # noqa: BLE001 — bound to brief boundary
+                        # A single specialist failure (e.g. LLM returns bad
+                        # JSON, target returns malformed cookie, transient
+                        # network error) used to abort the whole run because
+                        # the exception propagated out of the loop. We now
+                        # log the failure, emit a `specialist_failed`
+                        # agent_event so the dashboard + audit-run can see
+                        # it, and continue to the next brief. The audit's
+                        # `specialist_failure` check makes these visible
+                        # post-run.
+                        logger.exception(
+                            "brief %s (Cat %s) failed; continuing",
+                            brief.campaign_id, brief.subcategory_id,
+                        )
+                        print(
+                            f"    ✗ Cat {brief.subcategory_id} specialist "
+                            f"failed: {type(exc).__name__}: {exc}"
+                        )
+                        store._emit_event(  # noqa: SLF001 — cli is the loop driver
+                            run_id,
+                            agent="red_team_lead",
+                            event_type="specialist_failed",
+                            campaign_id=brief.campaign_id,
+                            payload={
+                                "subcategory_id": brief.subcategory_id,
+                                "error_type": type(exc).__name__,
+                                "error_message": str(exc)[:500],
+                            },
+                        )
                 if orch.remaining_count() > 0:
                     print(
                         f"\n[orchestrator] halted early with "
