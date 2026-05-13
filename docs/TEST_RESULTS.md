@@ -24,6 +24,8 @@ ChartBreaker has confirmed three reproducible exploits against the deployed Co-P
 
 The triage index in [`reports/README.md`](../reports/README.md) lists the same findings with one-paragraph summaries for reviewers who land on the `reports/` directory directly.
 
+**For OpenEMR engineers scoping fixes:** see [`reports/OPENEMR-HANDOFF.md`](../reports/OPENEMR-HANDOFF.md). It consolidates AF-001/002/003 plus the five Tier-2 stub findings (AF-004…AF-008, promoted from the run-`127f5f54` verifier-gap table in § Phase-5 evidence) with exact `workspace/openemr` file paths, fix recommendations, and the regression-replay command. Two caveats surfaced during fix-scoping are flagged there: AF-002's reproduction needs review (payload field-name mismatch) and AF-003 is not a one-line flag flip (a deliberate design constraint in `SessionUtil.php` requires the JS-readable cookie).
+
 ---
 
 ## Unit & parity tests
