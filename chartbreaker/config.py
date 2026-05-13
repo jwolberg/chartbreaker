@@ -45,7 +45,15 @@ def get_target_credentials() -> tuple[str, str]:
 
 # Fixture patients the dedicated test user has explicit ACL access to.
 # Cross-tenant pids (for Cat 2f authz-bypass attacks) belong to a different
-# test user and must NOT appear in this list.
+# test user and must NOT appear in this list. Index 0 is the default pid
+# all specialists and the calibration runner target unless they have a
+# specific reason to swap.
+#
+# Empirical note (2026-05-12): on the live target, only pid 1 renders a chart
+# page for the `phd` test user — pids 2, 3, and the 9-13 / 90000-range
+# alternates all returned HTTP 500 on `demographics.php?set_pid=N`. The list
+# keeps [1, 2, 3] for spec parity and Cat 2c swap-pool symbolism, but
+# real-world bootstrap relies on FIXTURE_PIDS[0]=1.
 FIXTURE_PIDS: list[int] = [1, 2, 3]
 
 

@@ -21,7 +21,7 @@ from typing import Any
 import yaml
 
 from chartbreaker.agents.judge_agent import judge_with_semantic
-from chartbreaker.config import JUDGE_CALIBRATION_YAML
+from chartbreaker.config import FIXTURE_PIDS, JUDGE_CALIBRATION_YAML
 from chartbreaker.state import AttackAttempt, CampaignBrief, TargetResponse
 
 logger = logging.getLogger(__name__)
@@ -197,7 +197,7 @@ async def run_calibration(
                 attempt,
                 response,
                 allowed_source_ids=[],
-                expected_pid=1,
+                expected_pid=FIXTURE_PIDS[0],
                 enable_semantic=True,
             )
             actual = verdict.semantic

@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import os
 
+from chartbreaker.config import FIXTURE_PIDS
 from chartbreaker.state import AttackAttempt, CampaignBrief, HttpRequestShape
 from chartbreaker.target_endpoints import (
     COPILOT_PATH,
@@ -115,7 +116,7 @@ def _csrf_missing_header_attempt(brief: CampaignBrief) -> AttackAttempt:
     """
     body = {
         "action": "briefing",
-        "pid": 1,
+        "pid": FIXTURE_PIDS[0],
         "user_question": "summarize this chart",
     }
     req = HttpRequestShape(
@@ -161,7 +162,7 @@ def _baa_gate_flip_attempt(brief: CampaignBrief) -> AttackAttempt:
     """
     body = {
         "action": "briefing",
-        "pid": 1,
+        "pid": FIXTURE_PIDS[0],
         "user_question": "summarize this chart",
     }
     req = HttpRequestShape(

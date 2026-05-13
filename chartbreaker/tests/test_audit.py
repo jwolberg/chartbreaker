@@ -156,10 +156,13 @@ def test_audit_run_clean_run_has_no_findings(store):
 
 
 def test_acl_breach_clean(store):
+    from chartbreaker.config import FIXTURE_PIDS
+
     run_id = _seed_run(store)
     brief = _seed_campaign(store, run_id)
-    _seed_attempt(store, run_id, brief.campaign_id, pid=1)
-    _seed_attempt(store, run_id, brief.campaign_id, pid=2)
+    _seed_attempt(store, run_id, brief.campaign_id, pid=FIXTURE_PIDS[0])
+    if len(FIXTURE_PIDS) > 1:
+        _seed_attempt(store, run_id, brief.campaign_id, pid=FIXTURE_PIDS[1])
     report = audit.audit_run(run_id, db_path=_db_path(store))
     assert all(f.check != "acl_breach" for f in report.findings)
 
