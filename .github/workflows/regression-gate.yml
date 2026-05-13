@@ -1,0 +1,84 @@
+name: ChartBreaker — regression gate
+
+# P5-T3 (docs/specs/phase5-platform-self-tests.md § AC-3.4):
+#   PR + nightly gate that fails the build on any case classified
+#   `drift_flagged` or `new_regression` by chartbreaker/regression.py.
+#   Distinct from the existing `regression-sweep.yml` (nightly artifact
+#   publisher): this workflow is lighter weight, runs on every PR, and
+#   short-circuits politely when the target is unreachable so a transient
+#   outage doesn't masquerade as a regression.
+
+on:
+  pull_request:
+    branches:
+      - main
+  schedule:
+    # Slightly offset from the nightly sweep (06:00 UTC) so the two
+    # don't hammer the target simultaneously.
+    - cron: '0 7 * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  regress-strict:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    # Forks won't have the target credentials and the dedicated test
+    # user is single-tenant — skip silently rather than fail.
+    if: ${{ github.repository_owner == 'jwolberg' || github.event_name != 'pull_request' }}
+
+    env:
+      CHARTBREAKER_TARGET_USER: ${{ secrets.CHARTBREAKER_TARGET_USER }}
+      CHARTBREAKER_TARGET_PASSWORD: ${{ secrets.CHARTBREAKER_TARGET_PASSWORD }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+      CHARTBREAKER_LOGIN_PROBE_BUDGET: '2'
+
+    steps:
+      - name: Skip on forks without credentials
+        if: ${{ secrets.CHARTBREAKER_TARGET_USER == '' }}
+        run: |
+          echo "::notice::CHARTBREAKER_TARGET_USER secret not configured; skipping regression gate."
+          exit 0
+
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install httpx pydantic 'python-dotenv>=1' pyyaml pandas pytest
+
+      - name: Run regression gate (strict + JSON + healthcheck)
+        # --strict: exit non-zero on drift_flagged or new_regression.
+        # --require-target-healthcheck: silently exit 0 if TARGET_BASE_URL
+        #   is unreachable (CI distinguishes outage from regression).
+        # --json: emit machine-readable report to stdout; captured to
+        #   regression.json for artifact upload.
+        run: |
+          python -m chartbreaker.cli regress \
+            --operator ci-gate \
+            --strict \
+            --require-target-healthcheck \
+            --json > regression.json
+          echo "--- Summary ---"
+          python -c "import json; r=json.load(open('regression.json')); \
+            s=r.get('summary',{}); print(f\"passed={s.get('passed',0)} \
+            regressed={s.get('regressed',0)} drifted={s.get('drifted',0)} \
+            fixed={s.get('fixed',0)}\")" || true
+
+      - name: Upload regression report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: regression-gate-${{ github.run_id }}
+          path: regression.json
+          retention-days: 14

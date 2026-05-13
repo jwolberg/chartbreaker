@@ -219,6 +219,31 @@ Remaining minor gaps:
 
 ---
 
+## Audit findings (Phase 5 — `chartbreaker audit-run`)
+
+After a run completes, `chartbreaker audit-run <run_id>` re-reads `runs.sqlite`
+and surfaces six classes of safety / signal-quality anomaly that a passing
+run might otherwise hide. The check is read-only and stateless — findings
+are emitted to stdout (or `--json`) and are not persisted to a table
+today (deliberate non-goal; see `docs/specs/phase5-platform-self-tests.md`
+§ Open Questions).
+
+| Check | Severity | Triggers when |
+|---|---|---|
+| `acl_breach` | fail | An attempt's `http_request.body.pid` is outside `FIXTURE_PIDS`. Defense-in-depth — the target ACL blocks the request, but the platform should never have *tried*. |
+| `budget_overrun` | fail | Sum of `costs.usd` for the run exceeds `BUDGETS.max_run_usd`. |
+| `agent_looping` | warn | A `(specialist, subcategory, seed_case)` triple appears in ≥10 attempts in the same run. |
+| `verdict_disagreement_spike` | fail | More than 30% of non-`not_run` verdicts have `verifier_replay ↔ semantic` mismatch (sample size ≥5). |
+| `homogeneous_verdicts` | warn | Every verdict in the run shares the same `verifier_replay` value AND the run has ≥6 attempts (rules out trivial runs). Catches target outage + judge-broken cases. |
+| `severity_inversion` | warn | A verdict was stamped `critical` while `verifier_replay = pass` AND the rationale is the templated fallback (or `semantic = not_run`). Indicates the static rubric pinned a finding the actual checks didn't support. |
+
+Exit codes: `0` clean / `1` any finding emitted / `2` usage error
+(unknown `run_id`, missing arg). `--all` audits every run and ORs the
+per-run codes. `--json` emits a machine-readable report suitable for CI
+piping.
+
+---
+
 ## Suggested follow-up work
 
 Phase 2.5 closed the five originally-documented gaps (T1 drill-down, T2 LLM trace, T3 live tab, T4 timeline detail, T5 rationale search) plus added run-log auto-capture (T6). Possible next steps if more observability investment is wanted:

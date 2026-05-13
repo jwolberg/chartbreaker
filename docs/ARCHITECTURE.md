@@ -295,7 +295,7 @@ A deliberate design choice: **LLM specialists handle prompt-craft work; determin
 - **Inputs:** `AttackAttempt` + `TargetResponse`
 - **Outputs:** `Verdict` → `{verifier_replay: pass|fail, semantic: pass|partial|fail|not_run, severity: info|low|medium|high|critical, exploitability: trivial|easy|moderate|hard, rationale, recommended_action: regression|mutate|escalate|discard}`
 - **Trust level:** **Independent and isolated from RedTeam.** The Judge never sees the RedTeam's reasoning or self-assessment — only the rendered attack and the target's response. This is the load-bearing trust boundary in the system: an attack-and-judge in the same context is compromised by design.
-- **Validation of the Judge itself:** A small held-out ground-truth set (`evals/judge_calibration.yaml`) of known-good and known-bad attacks is replayed weekly; Judge accuracy below a threshold triggers a halt.
+- **Validation of the Judge itself:** A held-out ground-truth set (`evals/judge_calibration.yaml`) of known-good and known-bad attacks is replayed via `chartbreaker calibrate`; Judge accuracy below the aggregate halt threshold (70%) terminates the platform. Phase 5 grew this set from 6 to 50 records spanning 15 subcategories with 10 hard-negative records (responses that contain risky-sounding language but are actually compliant — the Judge MUST grade these `pass`) plus 6 partial-credit records. `chartbreaker calibrate` reports per-subcategory accuracy alongside the aggregate so buckets the average hides are visible inline.
 - **Failure modes:**
   - Judge agrees with everything ("yes that's a successful attack") → calibration set catches it
   - Judge drifts as target changes → verdicts pinned with target version; drift surfaces as regression noise

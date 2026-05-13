@@ -53,10 +53,25 @@ class CalibrationResult:
     """Outcome of one calibration record replay."""
 
     record_id: str
+    subcategory_id: str
     expected_semantic: str
     actual_semantic: str
     matched: bool
     rationale: str
+    kind: str = "exploit_or_safe"  # exploit | safe | hard_negative | partial
+
+
+@dataclass(frozen=True)
+class SubcategoryAccuracy:
+    """Per-subcategory aggregation for the calibration report (P5-T2)."""
+
+    subcategory_id: str
+    records: int
+    correct: int
+
+    @property
+    def accuracy(self) -> float:
+        return self.correct / self.records if self.records else 0.0
 
 
 @dataclass(frozen=True)
@@ -68,6 +83,7 @@ class CalibrationSummary:
     accuracy: float
     threshold_action: str  # "pass" | "warn" | "halt"
     results: list[CalibrationResult]
+    per_subcategory: list[SubcategoryAccuracy]
 
     @property
     def is_pass(self) -> bool:
@@ -76,6 +92,17 @@ class CalibrationSummary:
     @property
     def is_halt(self) -> bool:
         return self.threshold_action == "halt"
+
+    def below_threshold_subcategories(
+        self, threshold: float = HALT_THRESHOLD
+    ) -> list[SubcategoryAccuracy]:
+        """Subcategories whose accuracy falls below ``threshold`` (default = HALT_THRESHOLD).
+
+        Informational only — the aggregate threshold still controls
+        process exit code. Tests + the CLI use this to surface buckets
+        the aggregate average might be hiding.
+        """
+        return [b for b in self.per_subcategory if b.accuracy < threshold]
 
 
 def _classify_accuracy(accuracy: float) -> str:
@@ -98,6 +125,20 @@ def _load_records(path: Path | str = JUDGE_CALIBRATION_YAML) -> list[dict[str, A
     return records
 
 
+def _subcategory_for(record: dict[str, Any]) -> str:
+    """Resolve the calibration record's subcategory.
+
+    Prefer the explicit ``subcategory`` field on the record (added in
+    P5-T2 so per-subcategory reporting is unambiguous); fall back to the
+    attack_id → subcategory map for pre-P5 records that don't set it.
+    """
+    explicit = record.get("subcategory")
+    if isinstance(explicit, str) and explicit:
+        return explicit
+    attack_id = record.get("attack_id", "")
+    return _ATTACK_ID_TO_SUBCATEGORY.get(attack_id, "1a")
+
+
 def _attempt_from_record(record: dict[str, Any], campaign_id: str) -> AttackAttempt:
     """Build a synthetic AttackAttempt for the calibration record.
 
@@ -108,10 +149,9 @@ def _attempt_from_record(record: dict[str, Any], campaign_id: str) -> AttackAtte
     actually drives the verdict.
     """
     attack_id = record.get("attack_id", "")
-    subcategory = _ATTACK_ID_TO_SUBCATEGORY.get(attack_id, "1a")
     return AttackAttempt(
         campaign_id=campaign_id,
-        subcategory_id=subcategory,
+        subcategory_id=_subcategory_for(record),
         specialist="injector",
         prompt=f"<calibration fixture for {attack_id}>",
     )
@@ -169,10 +209,12 @@ async def run_calibration(
         outcomes.append(
             CalibrationResult(
                 record_id=record_id,
+                subcategory_id=_subcategory_for(record),
                 expected_semantic=str(expected),
                 actual_semantic=str(actual),
                 matched=matched,
                 rationale=str(record.get("description", "")),
+                kind=str(record.get("kind", "exploit_or_safe")),
             )
         )
 
@@ -185,4 +227,25 @@ async def run_calibration(
         accuracy=accuracy,
         threshold_action=_classify_accuracy(accuracy),
         results=outcomes,
+        per_subcategory=_aggregate_per_subcategory(outcomes),
     )
+
+
+def _aggregate_per_subcategory(
+    results: list[CalibrationResult],
+) -> list[SubcategoryAccuracy]:
+    """Bucket results by subcategory_id; emit one Accuracy row per bucket.
+
+    Sorted by subcategory_id so the CLI's table prints in a stable order.
+    """
+    buckets: dict[str, list[CalibrationResult]] = {}
+    for r in results:
+        buckets.setdefault(r.subcategory_id, []).append(r)
+    return [
+        SubcategoryAccuracy(
+            subcategory_id=sub,
+            records=len(rs),
+            correct=sum(1 for r in rs if r.matched),
+        )
+        for sub, rs in sorted(buckets.items())
+    ]
