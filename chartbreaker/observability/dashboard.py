@@ -31,7 +31,9 @@ from __future__ import annotations
 import json
 import sqlite3
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import altair as alt
 
@@ -202,6 +204,30 @@ SEMANTIC_EMOJI: dict[str, str] = {
     "pass": "🟢",
     "not_run": "⬜",
 }
+
+
+# All `started_at` / `ended_at` timestamps land in SQLite as ISO-8601 UTC
+# strings (see chartbreaker/observability/store.py `_iso`). The sidebar
+# run-picker and the in-flight banner render them in Pacific time so the
+# operator doesn't have to convert UTC in their head.
+_PACIFIC = ZoneInfo("America/Los_Angeles")
+
+
+def _format_iso_pacific(iso_ts: object) -> str:
+    """Render an ISO-8601 UTC timestamp as ``YYYY-MM-DD HH:MM`` in Pacific.
+
+    Falls back to the first 16 chars of the input on parse failure so the
+    dropdown never crashes on an unexpected timestamp shape.
+    """
+    if not isinstance(iso_ts, str) or not iso_ts:
+        return ""
+    try:
+        dt = datetime.fromisoformat(iso_ts)
+    except ValueError:
+        return iso_ts[:16]
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(_PACIFIC).strftime("%Y-%m-%d %H:%M")
 
 
 def _decorate(value: str | None, mapping: dict[str, str]) -> str:
@@ -512,7 +538,7 @@ def _render_run_test_control(db_path: str) -> None:
     if in_flight is not None:
         st.sidebar.warning(
             f"A run is already in progress: `{in_flight['run_id'][:8]}…` "
-            f"(started {str(in_flight['started_at'])[:19]}). "
+            f"(started {_format_iso_pacific(in_flight['started_at'])} PT). "
             "Wait for it to finish before launching another."
         )
         # Still let the operator see what was selected, but disable the button.
@@ -604,7 +630,7 @@ def _render_run_picker(runs_df: pd.DataFrame) -> str | None:
     # Latest run first (default), "All runs" as the trailing meta-option.
     label_map: dict[str, str] = {}
     for _, row in runs_df.iterrows():
-        label = f"{row['started_at'][:19]} — {row['operator']}"
+        label = f"{_format_iso_pacific(row['started_at'])} PT — {row['operator']}"
         label_map[row["run_id"]] = label
     label_map["ALL"] = "All runs"
     options = list(label_map.keys())
