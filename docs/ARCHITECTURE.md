@@ -295,7 +295,7 @@ A deliberate design choice: **LLM specialists handle prompt-craft work; determin
 - **Inputs:** `AttackAttempt` + `TargetResponse`
 - **Outputs:** `Verdict` → `{verifier_replay: pass|fail, semantic: pass|partial|fail|not_run, severity: info|low|medium|high|critical, exploitability: trivial|easy|moderate|hard, rationale, recommended_action: regression|mutate|escalate|discard}`
 - **Trust level:** **Independent and isolated from RedTeam.** The Judge never sees the RedTeam's reasoning or self-assessment — only the rendered attack and the target's response. This is the load-bearing trust boundary in the system: an attack-and-judge in the same context is compromised by design.
-- **Validation of the Judge itself:** A held-out ground-truth set (`evals/judge_calibration.yaml`) of known-good and known-bad attacks is replayed via `chartbreaker calibrate`; Judge accuracy below the aggregate halt threshold (70%) terminates the platform. Phase 5 grew this set from 6 to 50 records spanning 15 subcategories with 10 hard-negative records (responses that contain risky-sounding language but are actually compliant — the Judge MUST grade these `pass`) plus 6 partial-credit records. `chartbreaker calibrate` reports per-subcategory accuracy alongside the aggregate so buckets the average hides are visible inline.
+- **Validation of the Judge itself:** A held-out ground-truth set (`evals/judge_calibration.yaml`) of known-good and known-bad attacks is replayed via `chartbreaker calibrate`; Judge accuracy below the aggregate halt threshold (70%) terminates the platform. Phase 5 grew this set from 6 to 50 records spanning 18 subcategories with 11 hard-negative records (responses that contain risky-sounding language but are actually compliant — the Judge MUST grade these `pass`) plus 6 partial-credit records. `chartbreaker calibrate` reports per-subcategory accuracy alongside the aggregate so buckets the average hides are visible inline. See § Platform Self-Tests below for the full picture.
 - **Failure modes:**
   - Judge agrees with everything ("yes that's a successful attack") → calibration set catches it
   - Judge drifts as target changes → verdicts pinned with target version; drift surfaces as regression noise
@@ -594,6 +594,8 @@ Three failure modes a naive regression test misses:
 
 A regression case is **retired** only by an explicit human action recorded in the case file (`retired_at`, `retired_by`, `retirement_reason`). The Orchestrator cannot retire a case autonomously.
 
+**CI gate (Phase 5).** `chartbreaker regress --strict --json --require-target-healthcheck` is wired into `.github/workflows/regression-gate.yml`, which fires on every PR to `main` and on a nightly cron. `--strict` exits non-zero on any case classified `drift_flagged` or `new_regression` by `regression.classify_replay`; `--require-target-healthcheck` probes `TARGET_BASE_URL` first and short-circuits with a warning on outage so transient target unavailability cannot masquerade as a real regression. The intent is to block Judge drift from landing on `main` silently — without this gate, a Judge-model bump could change a pinned exploit's verdict and ship before anyone noticed.
+
 ---
 
 ## Observability Layer
@@ -743,6 +745,32 @@ The store is **four file artifacts** plus a Streamlit reader. Everything is loca
 **Closing the loop.** The Orchestrator's priority math reads from `attempts`, `judge_verdicts`, and `costs` on each tick: coverage by subcategory, recent severity distribution, cost burn against `BUDGETS.max_run_usd`. The observability store is not just a viewer — it's the shared memory that lets the Orchestrator schedule the next campaign without any agent calling another directly.
 
 See `docs/OBSERVABILITY.md` for the operator-facing how-to guide (SQL recipes, drill-down workflow, the four-signal-layer model).
+
+---
+
+## Platform Self-Tests (Phase 5)
+
+The observability store records what happened during a run; the *self-tests* check whether what happened is trustworthy. Three orthogonal mechanisms, each documented in `docs/specs/phase5-platform-self-tests.md`:
+
+**1. Post-run audit (`chartbreaker audit-run`).** A new module `chartbreaker/audit.py` exposes six pure check functions of shape `(sqlite_conn, run_id) → list[AuditFinding]`. None of them write to the store or call the network; they re-read `runs.sqlite` and surface anomalies that a passing run might otherwise hide.
+
+| Check | Severity | Triggers when |
+|---|---|---|
+| `acl_breach` | fail | An attempt's `http_request.body.pid` is outside `FIXTURE_PIDS`. Defense-in-depth: the target ACL blocks it, but the platform should never have tried. |
+| `budget_overrun` | fail | Sum of `costs.usd` for the run exceeds `BUDGETS.max_run_usd`. |
+| `agent_looping` | warn | A `(specialist, subcategory, seed_case)` triple appears in ≥10 attempts in the same run. |
+| `verdict_disagreement_spike` | fail | More than 30% of non-`not_run` verdicts have `verifier_replay ↔ semantic` mismatch (sample size ≥5). |
+| `homogeneous_verdicts` | warn | Every verdict in the run has the same `verifier_replay` value AND the run has ≥6 attempts. Catches target outage and broken-Judge cases. |
+| `severity_inversion` | warn | A verdict was stamped `critical` while `verifier_replay = pass` AND the rationale is the templated fallback (or `semantic = not_run`). Indicates the static rubric pinned a finding the actual checks didn't support. |
+| `specialist_failure` | warn | One or more specialists raised mid-run; `cli.py`'s try/except caught the exception, emitted a `specialist_failed` agent_event, and continued. The audit makes the silent miss visible. |
+
+Exit codes: `0` clean / `1` any finding / `2` usage error. `--json` emits a machine-readable report. The CLI is the only surface today — persistence to a sqlite table is a deliberate non-goal; the audit is stateless and idempotent.
+
+**2. Judge calibration set growth.** `evals/judge_calibration.yaml` grew from 6 to 50 records spanning 18 subcategories, with 11 `kind: hard_negative` records (responses that contain risky-sounding language but are actually compliant — the Judge must grade `pass`) and 6 `kind: partial` records that exercise the three-way classifier. `chartbreaker calibrate` reports per-subcategory accuracy alongside the aggregate so a passing average cannot hide a sub-70% bucket. See § Arbiter — Judge Agent for thresholds and halt semantics.
+
+**3. Regression-gate CI workflow.** Described under § Regression Harness above — `--strict` exit codes on `drift_flagged` / `new_regression`, plus the `regression-gate.yml` workflow that fires on every PR plus nightly cron.
+
+The audit + calibration set + CI gate are the answer to "how do you know the *tester* works?" — independent of whether the *target* held its defenses. Disagreement between any two of these checks is itself a finding.
 
 ---
 

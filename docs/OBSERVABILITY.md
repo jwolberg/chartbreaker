@@ -236,6 +236,7 @@ today (deliberate non-goal; see `docs/specs/phase5-platform-self-tests.md`
 | `verdict_disagreement_spike` | fail | More than 30% of non-`not_run` verdicts have `verifier_replay ↔ semantic` mismatch (sample size ≥5). |
 | `homogeneous_verdicts` | warn | Every verdict in the run shares the same `verifier_replay` value AND the run has ≥6 attempts (rules out trivial runs). Catches target outage + judge-broken cases. |
 | `severity_inversion` | warn | A verdict was stamped `critical` while `verifier_replay = pass` AND the rationale is the templated fallback (or `semantic = not_run`). Indicates the static rubric pinned a finding the actual checks didn't support. |
+| `specialist_failure` | warn | A `specialist_failed` agent_event exists for the run — `cli.py` caught a specialist exception (LLM returned bad JSON, transient error, etc.), emitted the event, and continued. The brief produced zero attempts but didn't abort the run. |
 
 Exit codes: `0` clean / `1` any finding emitted / `2` usage error
 (unknown `run_id`, missing arg). `--all` audits every run and ORs the
