@@ -19,6 +19,7 @@ import argparse
 import asyncio
 import getpass
 import logging
+import os
 import sys
 from pathlib import Path
 from uuid import uuid4
@@ -581,6 +582,60 @@ async def run_regression_sweep(
     return 0
 
 
+def _publish_findings_cli(args) -> int:
+    """Implementation of ``chartbreaker publish-findings``.
+
+    Late-imports the tracker module so the CLI's import-time cost is unaffected
+    when this subcommand is not used.
+    """
+    from chartbreaker import publish as _publish
+
+    project = args.project
+    if not project:
+        print(
+            "error: --project (or CHARTBREAKER_TRACKER_PROJECT env var) is required.",
+            file=sys.stderr,
+        )
+        return 2
+
+    client = None
+    try:
+        if not args.dry_run:
+            from chartbreaker.trackers.gitlab import GitLabClient
+
+            client = GitLabClient()
+
+        results = _publish.publish_cases(
+            project=project,
+            client=client,
+            dry_run=args.dry_run,
+            only_case_id=args.case,
+        )
+    finally:
+        if client is not None:
+            client.close()
+
+    filed = 0
+    skipped = 0
+    for r in results:
+        if r.action == "filed":
+            filed += 1
+            print(f"  FILED   {r.case_id}  →  {r.web_url}")
+        elif r.action == "dry-run":
+            print(f"  DRY-RUN {r.case_id}  (would file)")
+        elif r.action == "skipped-already-filed":
+            skipped += 1
+            print(f"  SKIP    {r.case_id}  already at {r.tracker_ref}")
+        elif r.action == "skipped-retired":
+            skipped += 1
+            print(f"  SKIP    {r.case_id}  retired")
+    print(
+        f"publish-findings done: {filed} filed, {skipped} skipped, "
+        f"{len(results)} total considered."
+    )
+    return 0
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="chartbreaker",
@@ -723,6 +778,33 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     auto_p.add_argument("--verbose", action="store_true")
 
+    # publish-findings — file pinned AF-REG-NNN cases as GitLab issues so the
+    # OpenEMR fixer agent has a tracker to pull from. Idempotent: cases with a
+    # tracker_ref are skipped. See chartbreaker/publish.py + trackers/gitlab.py.
+    publish_p = sub.add_parser(
+        "publish-findings",
+        help="File pinned regression cases as GitLab issues (idempotent).",
+    )
+    publish_p.add_argument(
+        "--project",
+        default=os.environ.get("CHARTBREAKER_TRACKER_PROJECT"),
+        help=(
+            "GitLab project numeric ID or full path (e.g. 'jwolberg/openemr'). "
+            "Defaults to CHARTBREAKER_TRACKER_PROJECT env var."
+        ),
+    )
+    publish_p.add_argument(
+        "--case",
+        default=None,
+        help="Only publish this specific AF-REG-NNN case.",
+    )
+    publish_p.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print what would be filed; do not call GitLab.",
+    )
+    publish_p.add_argument("--verbose", action="store_true")
+
     # P5-T1 — post-run audit. Reads runs.sqlite, surfaces safety / signal
     # anomalies. Six checks defined in chartbreaker/audit.py.
     audit_p = sub.add_parser(
@@ -815,6 +897,8 @@ def main() -> None:
             f"{final.max_iterations} cost=${final.cost_so_far_usd:.4f} "
             f"reason={final.stopped_reason}"
         )
+    elif args.cmd == "publish-findings":
+        sys.exit(_publish_findings_cli(args))
     elif args.cmd == "audit-run":
         # Late import keeps cli.py import-light when this subcommand is unused.
         from chartbreaker import audit as _audit
