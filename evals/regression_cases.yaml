@@ -1856,6 +1856,7 @@ cases:
   retired_at: null
   retired_by: null
   retirement_reason: null
+  tracker_ref: gitlab:https://labs.gauntletai.com:549:1
 - id: AF-REG-051
   schema_version: 1
   subcategory: 6e
@@ -1896,3 +1897,4 @@ cases:
   retired_at: null
   retired_by: null
   retirement_reason: null
+  tracker_ref: gitlab:https://labs.gauntletai.com:549:2
