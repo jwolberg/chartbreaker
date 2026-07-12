@@ -64,3 +64,24 @@ tmp-phpstan/*
 docker/development-easy/docker-compose.override.yml
 docker/development-easy-light/docker-compose.override.yml
 docker/development-easy-redis/docker-compose.override.yml
+backlog/.next-id.lock
+sessions/.next-id.lock
+.status.md
+
+# Local machine-specific overrides (never committed). Keep a sanitized
+# template tracked (e.g. docs/DEPLOY.md) and put real/private values in the
+# matching *.local file (e.g. docs/DEPLOY.local.md).
+*.local
+*.local.md
+
+# TerMinal / local agent-harness scratch — local tooling state, not shipped.
+.TerMinal/
+.agents/
+.checks/
+.reviews/
+.gitlab/
+backlog/
+sessions/
+.codex/
+CLAUDE.workflow.md
+AGENTS.md
