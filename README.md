@@ -18,19 +18,18 @@ ChartBreaker continuously probes a deployed Clinical Co-Pilot for prompt-injecti
 
 | Question | Doc |
 |---|---|
-| What does the platform attack, and what defenses exist? | [`docs/THREAT_MODEL.md`](docs/THREAT_MODEL.md) |
-| How is the platform built? Agent roster, model registry, file layout. | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) |
+| What does the platform attack, and what defenses exist? | [`THREAT_MODEL.md`](THREAT_MODEL.md) |
+| How is the platform built? Agent roster, model registry, file layout. | [`ARCHITECTURE.md`](ARCHITECTURE.md) |
 | Operating model: hosting, DB, secrets, success criteria, SLOs, non-goals. | [`docs/PROJECT_STRATEGY.md`](docs/PROJECT_STRATEGY.md) |
-| Who uses ChartBreaker and how. | [`docs/USERS.md`](docs/USERS.md) |
+| Who uses ChartBreaker and how. | [`USERS.md`](USERS.md) |
 | Execution plan: phased tickets, dependencies, status. | [`docs/BUILD_PLAN.md`](docs/BUILD_PLAN.md) |
-| Original assignment / rubric. | [`docs/ASSIGNMENT.md`](docs/ASSIGNMENT.md) |
 
 ## Setup
 
 **Requirements:** Python 3.10+ (validated against 3.10.10), `pip`, network access to OpenAI + OpenRouter APIs.
 
 ```bash
-git clone ssh://git@labs.gauntletai.com:22022/jwolberg/chartbreaker.git
+git clone https://github.com/jwolberg/chartbreaker.git
 cd chartbreaker
 python3 -m venv .venv
 source .venv/bin/activate
@@ -91,7 +90,7 @@ See [`docs/OBSERVABILITY.md`](docs/OBSERVABILITY.md) for the full guide to the f
 - **No public ChartBreaker surface**: the dashboard runs on `localhost:8501`; CI-produced `runs.sqlite` is the reviewer-facing artifact (uploaded as a GitHub release attachment).
 - **No live PHI**: fixture patients are synthetic; `redactor.py` runs pre-insert as defense in depth.
 
-Full agent roster + interaction diagram in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+Full agent roster + interaction diagram in [`ARCHITECTURE.md`](ARCHITECTURE.md).
 
 ## Status
 
@@ -107,8 +106,8 @@ Coverage: 14 attack subcategories across 6 categories (Prompt Injection / Exfilt
 | AI cost analysis | [`COST_ANALYSIS.md`](COST_ANALYSIS.md) — actual dev spend + projections at 100 / 1K / 10K / 100K |
 | Observability guide | [`docs/OBSERVABILITY.md`](docs/OBSERVABILITY.md) |
 | CI-produced `runs.sqlite` | GitHub release tag `nightly` (automated via [`.github/workflows/regression-sweep.yml`](.github/workflows/regression-sweep.yml)) |
-| Demo video (3–5 min) | _TBD — recording in progress; script in [`docs/SUBMISSION_DRAFTS.md`](docs/SUBMISSION_DRAFTS.md)_ |
-| Social post (X / LinkedIn @GauntletAI) | _TBD — draft text in [`docs/SUBMISSION_DRAFTS.md`](docs/SUBMISSION_DRAFTS.md)_ |
+| Demo video (3–5 min) | _TBD — recording in progress_ |
+| Social post (X / LinkedIn @GauntletAI) | _TBD_ |
 
 ## Observability
 
