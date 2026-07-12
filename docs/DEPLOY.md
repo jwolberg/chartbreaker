@@ -79,7 +79,7 @@ gcloud artifacts repositories create chartbreaker \
 ## Build + deploy (each time you want to ship a new snapshot)
 
 ```bash
-cd /Users/jmwolberg/workspace/chartbreaker
+cd /path/to/chartbreaker   # your local repo root
 
 # Sanity-check the data that's about to be baked in:
 ls -lh observability/runs.sqlite
