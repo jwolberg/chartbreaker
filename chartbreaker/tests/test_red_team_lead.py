@@ -31,6 +31,8 @@ def test_specialist_for_routes_correctly():
     assert red_team_lead.specialist_for("2f") == "cracker"
     assert red_team_lead.specialist_for("6a") == "cracker"
     assert red_team_lead.specialist_for("4c") == "saboteur"
+    assert red_team_lead.specialist_for("5b") == "glutton"
+    assert red_team_lead.specialist_for("5c") == "glutton"
 
 
 def test_specialist_for_raises_on_unknown_subcategory():
@@ -63,6 +65,16 @@ async def test_dispatch_to_saboteur_returns_attempt_and_no_cost():
     attempt, cost = await red_team_lead.dispatch(brief)
     assert isinstance(attempt, AttackAttempt)
     assert attempt.specialist == "saboteur"
+    assert cost is None
+
+
+@pytest.mark.asyncio
+async def test_dispatch_to_glutton_returns_attempt_and_no_cost():
+    brief = _brief("5c")
+    attempt, cost = await red_team_lead.dispatch(brief)
+    assert isinstance(attempt, AttackAttempt)
+    assert attempt.specialist == "glutton"
+    assert attempt.multi_turn_sequence is not None
     assert cost is None
 
 

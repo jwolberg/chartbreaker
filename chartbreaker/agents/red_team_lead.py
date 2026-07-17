@@ -16,6 +16,7 @@ from typing import Literal
 from chartbreaker import evals_loader
 from chartbreaker.agents.specialists import (
     exfiltration_specialist,
+    glutton_specialist,
     injection_specialist,
     multi_turn_specialist,
     protocol_specialist,
@@ -60,8 +61,11 @@ _ROUTING_TABLE: dict[str, tuple[SpecialistName, bool]] = {
     "4b": ("saboteur", False),
     "4c": ("saboteur", False),
     "4d": ("saboteur", False),
+    # Glutton covers rate-limit session rotation + self-referential loop bait.
     # The Cat 5a manual probe is dispatched out-of-band by the CLI for now
-    # because no Phase-1 specialist owns it (Glutton lands in Phase 2).
+    # (token-cap exhaustion is asserted by observing normal traffic, not probed).
+    "5b": ("glutton", False),
+    "5c": ("glutton", False),
 }
 
 
@@ -115,5 +119,8 @@ async def dispatch(
 
     if specialist == "saboteur":
         return tool_misuse_specialist.generate(brief), None
+
+    if specialist == "glutton":
+        return glutton_specialist.generate(brief), None
 
     raise ValueError(f"Specialist {specialist!r} is not yet wired")
