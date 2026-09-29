@@ -6,6 +6,14 @@ ChartBreaker continuously probes a deployed Clinical Co-Pilot for prompt-injecti
 
 > The deployed thing in this project is the **OpenEMR target**, not ChartBreaker. ChartBreaker is an operator-internal security tool with no public surface by design.
 
+## Video walkthrough
+
+A narrated tour of what ChartBreaker is and how the code is laid out: [`cribs-output/cribs.mp4`](cribs-output/cribs.mp4)
+
+![What ChartBreaker probes for](docs/img/cribs-what-it-is.png)
+
+![ChartBreaker code map](docs/img/cribs-code-map.png)
+
 ## Deployed target
 
 | What | Where |

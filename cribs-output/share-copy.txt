@@ -1,0 +1,1 @@
+A 98-second tour of ChartBreaker, the multi-agent red team I built to attack an OpenEMR clinical Co-Pilot. It follows one attack from the Orchestrator's pick, through a specialist, to the live target and an isolated Judge, and shows how confirmed exploits get pinned into a regression suite. Every claim in the video is cited to a file and line.
