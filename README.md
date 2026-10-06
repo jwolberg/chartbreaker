@@ -46,6 +46,12 @@ cp .env.example .env
 $EDITOR .env   # fill in the values below
 ```
 
+Before pushing, run the same lint/format gate CI runs:
+
+```bash
+ruff check --fix . && ruff format .
+```
+
 ### Required environment variables
 
 | Variable | Purpose |

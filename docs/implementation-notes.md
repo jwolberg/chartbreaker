@@ -67,3 +67,14 @@ backlog tickets. Newest entries at the bottom.
   No test patched `time.sleep`, so no test changes were needed.
 - ASYNC240 (stop-file `exists`/`unlink`) kept with `noqa`. Each is one local
   stat/unlink; `asyncio.to_thread` would add complexity for no measurable gain.
+
+## 2026-10-06 — #0004 CI ruff gate
+
+- ci.yml `quality` job: `ruff check --output-format=github .` (inline PR
+  annotations) and `ruff format --check .` before pytest, using the ruff pinned in
+  requirements-dev.txt.
+- Chose a README one-liner over `.pre-commit-config.yaml` (optional in the ticket)
+  to avoid adding pre-commit as a tool. Easy to add later.
+- Verified locally that an appended unused import makes the lint step exit 1 and an
+  unformatted file makes the format step exit 1. **Not verified in GitHub Actions**
+  (branch not pushed).
