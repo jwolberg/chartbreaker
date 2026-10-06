@@ -42,3 +42,21 @@ backlog tickets. Newest entries at the bottom.
   unused (E402 included). Always evaluate RUF100 under the full config.
 - 32 findings remain after safe fixes (the ticket estimated 18; the explicit rule set adds
   E402 ×9, ASYNC240 ×3, B904, B905, SIM108). These move to #0003.
+
+## 2026-10-06 — #0003 Resolve manual ruff findings
+
+- Kept as reasoned `noqa` (deliberate degrade-gracefully boundaries): BLE001 in
+  judge_agent (LLM failure → deterministic verdict), calibration (one bad record
+  mustn't abort the run), cli `_target_reachable` (any failure = unreachable;
+  narrowing to `httpx.HTTPError` would let `httpx.InvalidURL` escape and crash).
+  TRY004 in evals_loader is kept as ValueError: it's malformed file content, and no
+  caller catches it either way.
+- `cli.py` E402 moved to a per-file ignore in ruff.toml (`load_dotenv()` must run
+  before the chartbreaker imports).
+- PYI034: `Self` from `typing_extensions` imported under `TYPE_CHECKING` only
+  (both files use `from __future__ import annotations`), so no new runtime dep.
+- Small behavior deltas: `get_role_config` KeyError now raised `from None`
+  (cleaner traceback); `zip(..., strict=True)` in proposal_harness, which would
+  raise only if gather() returned a different count (a bug either way).
+- **Deviation:** ASYNC240 ×3 (blocking `Path` ops in `auto_run`) moved to #0005
+  alongside ASYNC251. Same file, same fix theme.

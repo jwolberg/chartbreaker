@@ -245,11 +245,9 @@ def check_agent_looping(conn: sqlite3.Connection, run_id: str) -> list[AuditFind
 
 def _verdicts_agree(verifier: str, semantic: str) -> bool:
     """Loose agreement: pass↔pass, fail↔(fail|partial). Anything else disagrees."""
-    if verifier == "pass" and semantic == "pass":
-        return True
-    if verifier == "fail" and semantic in ("fail", "partial"):
-        return True
-    return False
+    return (verifier == "pass" and semantic == "pass") or (
+        verifier == "fail" and semantic in ("fail", "partial")
+    )
 
 
 def check_disagreement_spike(

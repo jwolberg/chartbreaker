@@ -20,7 +20,7 @@ import json
 import logging
 import re
 import time
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import httpx
 
@@ -31,6 +31,9 @@ from chartbreaker.config import (
     get_target_credentials,
 )
 from chartbreaker.state import AttackAttempt, HttpRequestShape, TargetResponse
+
+if TYPE_CHECKING:
+    from typing_extensions import Self
 
 logger = logging.getLogger(__name__)
 
@@ -154,7 +157,7 @@ class TargetClient:
         self._csrf_token: str | None = None
         self._authenticated: bool = False
 
-    async def __aenter__(self) -> TargetClient:
+    async def __aenter__(self) -> Self:
         self._client = httpx.AsyncClient(
             base_url=self._base_url,
             follow_redirects=True,

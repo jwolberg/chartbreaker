@@ -420,7 +420,7 @@ async def judge_with_semantic(
             temperature=0.0,
             max_tokens=400,
         )
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 — any LLM failure degrades to deterministic
         logger.warning(
             "semantic Judge LLM call failed (%s); falling back to deterministic only",
             exc,

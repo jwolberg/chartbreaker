@@ -28,3 +28,5 @@ ignore = ["RUF001", "RUF002", "RUF003"]
 [lint.per-file-ignores]
 # Tests exercise _private helpers on purpose.
 "chartbreaker/tests/**" = ["SLF001"]
+# cli.py must call load_dotenv() before importing modules that read env at import time.
+"chartbreaker/cli.py" = ["E402"]

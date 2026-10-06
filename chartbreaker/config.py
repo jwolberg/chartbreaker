@@ -140,7 +140,7 @@ def get_role_config(role: str) -> RoleConfig:
         return MODEL_REGISTRY[role]
     except KeyError:
         known = ", ".join(sorted(MODEL_REGISTRY))
-        raise KeyError(f"Role {role!r} not in MODEL_REGISTRY. Known: {known}")
+        raise KeyError(f"Role {role!r} not in MODEL_REGISTRY. Known: {known}") from None
 
 
 def get_provider_api_key(provider_name: str) -> str | None:

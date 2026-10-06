@@ -37,7 +37,7 @@ def test_parse_extracts_chart_text():
 
 def test_parse_strips_code_fences():
     text = '```json\n{"prompt": "test"}\n```'
-    prompt, chart = _parse_llm_output(text, "prompt")
+    prompt, _chart = _parse_llm_output(text, "prompt")
     assert prompt == "test"
 
 

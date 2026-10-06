@@ -14,10 +14,13 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from urllib.parse import quote
 
 import httpx
+
+if TYPE_CHECKING:
+    from typing_extensions import Self
 
 DEFAULT_HOST = "https://labs.gauntletai.com"
 DEFAULT_TIMEOUT = 15.0
@@ -59,7 +62,7 @@ class GitLabClient:
     def close(self) -> None:
         self._client.close()
 
-    def __enter__(self) -> GitLabClient:
+    def __enter__(self) -> Self:
         return self
 
     def __exit__(self, *_: object) -> None:

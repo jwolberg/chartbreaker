@@ -33,7 +33,7 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent
 _DOTENV_PATH = _REPO_ROOT / ".env"
 load_dotenv(_DOTENV_PATH)
 
-from chartbreaker import (  # noqa: E402  (after load_dotenv)
+from chartbreaker import (
     calibration,
     config,
     llm_client,
@@ -441,7 +441,7 @@ async def _target_reachable() -> bool:
             # GET — some hosts answer HEAD with 4xx even when up.
             r = await client.get(config.TARGET_BASE_URL)
         return r.status_code < 500
-    except Exception:
+    except Exception:  # noqa: BLE001 — any failure (bad URL, TLS, network) = unreachable
         return False
 
 
@@ -465,19 +465,18 @@ async def run_regression_sweep(
     Returns a process exit code: 0 clean / 1 in strict mode if any case
     classifies to a fail status / 0 with warning if healthcheck fails.
     """
-    if require_healthcheck:
-        if not await _target_reachable():
-            msg = (
-                f"WARNING: target {config.TARGET_BASE_URL} is unreachable; "
-                "skipping regression sweep (exit 0)."
-            )
-            if emit_json:
-                import json as _json
+    if require_healthcheck and not await _target_reachable():
+        msg = (
+            f"WARNING: target {config.TARGET_BASE_URL} is unreachable; "
+            "skipping regression sweep (exit 0)."
+        )
+        if emit_json:
+            import json as _json
 
-                print(_json.dumps({"skipped": True, "reason": "target_unreachable"}))
-            else:
-                print(msg, file=sys.stderr)
-            return 0
+            print(_json.dumps({"skipped": True, "reason": "target_unreachable"}))
+        else:
+            print(msg, file=sys.stderr)
+        return 0
 
     run_id = str(uuid4())
     cli_command = " ".join(sys.argv)

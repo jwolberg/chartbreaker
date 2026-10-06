@@ -94,7 +94,7 @@ async def dispatch(
             f"No specialist routes subcategory {brief.subcategory_id!r}. Known: {known}"
         )
 
-    specialist, needs_seed = _ROUTING_TABLE[brief.subcategory_id]
+    specialist, _needs_seed = _ROUTING_TABLE[brief.subcategory_id]
 
     if specialist == "injector":
         if brief.seed_case_id is None:

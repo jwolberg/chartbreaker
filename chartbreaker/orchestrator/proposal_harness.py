@@ -461,7 +461,7 @@ def propose(
         narration_results = asyncio.run(_narrate_all())
 
     out: list[ProposedCampaign] = []
-    for (brief, specialist), result in zip(candidates, narration_results):
+    for (brief, specialist), result in zip(candidates, narration_results, strict=True):
         score = orchestrator_agent.priority_score(
             orchestrator_agent._severity_for_subcategory(  # noqa: SLF001
                 brief.subcategory_id

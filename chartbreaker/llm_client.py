@@ -73,10 +73,9 @@ def _maybe_write_trace(record: dict) -> None:
         return
     try:
         _payload_trace_path.parent.mkdir(parents=True, exist_ok=True)
-        with _payload_trace_lock:
-            with _payload_trace_path.open("a", encoding="utf-8") as f:
-                f.write(json.dumps(record, default=str, separators=(",", ":")))
-                f.write("\n")
+        with _payload_trace_lock, _payload_trace_path.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(record, default=str, separators=(",", ":")))
+            f.write("\n")
     except OSError as exc:
         logger.warning("could not write LLM payload trace: %s", exc)
 
@@ -141,19 +140,21 @@ async def _post_with_retry(
         for attempt_idx in range(max_attempts):
             try:
                 response = await client.post(url, headers=headers, json=payload)
-                if response.status_code in _RETRY_STATUS_CODES:
-                    if attempt_idx + 1 < max_attempts:
-                        delay = 2**attempt_idx
-                        logger.warning(
-                            "transient HTTP %s from %s; retrying in %ds (attempt %d/%d)",
-                            response.status_code,
-                            url,
-                            delay,
-                            attempt_idx + 1,
-                            max_attempts,
-                        )
-                        await asyncio.sleep(delay)
-                        continue
+                if (
+                    response.status_code in _RETRY_STATUS_CODES
+                    and attempt_idx + 1 < max_attempts
+                ):
+                    delay = 2**attempt_idx
+                    logger.warning(
+                        "transient HTTP %s from %s; retrying in %ds (attempt %d/%d)",
+                        response.status_code,
+                        url,
+                        delay,
+                        attempt_idx + 1,
+                        max_attempts,
+                    )
+                    await asyncio.sleep(delay)
+                    continue
                 if response.status_code >= 400:
                     # Surface the provider's response body — OpenRouter / OpenAI
                     # typically explain *why* in the body (e.g. "model not found").

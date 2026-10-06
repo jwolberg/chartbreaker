@@ -2,8 +2,17 @@
 
 from __future__ import annotations
 
+import pytest
+
 from chartbreaker.agents import orchestrator_agent
-from chartbreaker.state import CampaignBrief
+from chartbreaker.config import Budgets
+from chartbreaker.observability.store import ObservabilityStore
+from chartbreaker.state import (
+    AttackAttempt,
+    CampaignBrief,
+    CostObservation,
+    TargetResponse,
+)
 
 
 def test_severity_weight_orders_correctly():
@@ -57,16 +66,6 @@ def test_plan_initial_briefs_attaches_seed_for_injector_subcategories():
 # ---------------------------------------------------------------------------
 # Per-tick Orchestrator — telemetry-driven priority re-scoring.
 # ---------------------------------------------------------------------------
-
-import pytest
-
-from chartbreaker.config import Budgets
-from chartbreaker.observability.store import ObservabilityStore
-from chartbreaker.state import (
-    AttackAttempt,
-    CostObservation,
-    TargetResponse,
-)
 
 
 @pytest.fixture

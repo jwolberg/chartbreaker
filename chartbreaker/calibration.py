@@ -199,7 +199,7 @@ async def run_calibration(
                 enable_semantic=True,
             )
             actual = verdict.semantic
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 — one bad record must not abort the run
             logger.warning("Judge call failed on %s: %s", record_id, exc)
             actual = "not_run"
 

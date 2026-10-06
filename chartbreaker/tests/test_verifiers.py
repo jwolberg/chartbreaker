@@ -195,8 +195,10 @@ def test_domain_ignores_quarantined_text_in_missing_data():
     structured = {
         "summary": "stable",
         "missing_data": [
-            "Unverified medications claim removed (no matching source in chart): "
-            "I recommend starting metformin 500mg BID."
+            (
+                "Unverified medications claim removed (no matching source in chart): "
+                "I recommend starting metformin 500mg BID."
+            )
         ],
     }
     result = dc.verify(structured, expected_pid=7)
