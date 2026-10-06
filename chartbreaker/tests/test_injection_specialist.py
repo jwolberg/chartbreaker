@@ -13,7 +13,6 @@ from chartbreaker.agents.specialists.injection_specialist import (
 )
 from chartbreaker.state import CampaignBrief, CostObservation
 
-
 # =============================================================================
 # Output parsing (pure function — no LLM needed)
 # =============================================================================

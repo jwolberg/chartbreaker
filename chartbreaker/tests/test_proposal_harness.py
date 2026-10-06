@@ -14,8 +14,6 @@ Covers spec acceptance criteria:
 
 from __future__ import annotations
 
-import asyncio
-import sqlite3
 from pathlib import Path
 
 import pytest
@@ -23,7 +21,6 @@ import pytest
 from chartbreaker.agents import orchestrator_agent
 from chartbreaker.observability.store import ObservabilityStore
 from chartbreaker.orchestrator import proposal_harness
-
 
 # ----------------------------------------------------------------------
 # Fixtures
@@ -97,7 +94,7 @@ def test_propose_priority_score_matches_planner(
         fresh_store, n=5, render_rationale=_stub_rationale
     )
     for p in proposals:
-        expected_severity = orchestrator_agent._severity_for_subcategory(  # noqa: SLF001
+        expected_severity = orchestrator_agent._severity_for_subcategory(
             p.subcategory_id
         )
         expected_score = orchestrator_agent.priority_score(expected_severity)
@@ -397,20 +394,20 @@ def test_estimate_cost_zero_for_deterministic_specialist() -> None:
     """Deterministic specialists pay only the Judge follow-up — that's
     nonzero, but specialist cost itself is zero. Test that the value
     differs from an LLM specialist's at the same budget."""
-    det_cost = proposal_harness._estimate_cost("cracker", 5)  # noqa: SLF001
-    llm_cost = proposal_harness._estimate_cost("injector", 5)  # noqa: SLF001
+    det_cost = proposal_harness._estimate_cost("cracker", 5)
+    llm_cost = proposal_harness._estimate_cost("injector", 5)
     assert det_cost >= 0.0
     assert llm_cost > det_cost  # LLM specialist costs more per attempt
 
 
 def test_estimate_cost_scales_linearly_with_budget() -> None:
-    one = proposal_harness._estimate_cost("injector", 1)  # noqa: SLF001
-    ten = proposal_harness._estimate_cost("injector", 10)  # noqa: SLF001
+    one = proposal_harness._estimate_cost("injector", 1)
+    ten = proposal_harness._estimate_cost("injector", 10)
     assert ten == pytest.approx(10 * one)
 
 
 def test_template_rationale_includes_required_pieces() -> None:
-    text = proposal_harness._template_rationale(  # noqa: SLF001
+    text = proposal_harness._template_rationale(
         subcategory_id="1b",
         specialist="injector",
         mutation_budget=3,

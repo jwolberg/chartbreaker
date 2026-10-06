@@ -95,7 +95,7 @@ class AutoRunState:
         path.write_text(json.dumps(asdict(self), indent=2))
 
     @classmethod
-    def load(cls) -> "AutoRunState | None":
+    def load(cls) -> AutoRunState | None:
         path = state_file_path()
         if not path.exists():
             return None
@@ -242,7 +242,7 @@ async def auto_run_loop(
                 run_id, run_cost = await _run_one_iteration(
                     state, operator, enable_semantic_judge
                 )
-            except Exception as exc:  # noqa: BLE001 — bound to iteration
+            except Exception as exc:  # bound to iteration
                 logger.exception("auto-run iteration %d crashed", i + 1)
                 state.notes.append(
                     f"iteration {i+1} crashed: {type(exc).__name__}: {exc}"

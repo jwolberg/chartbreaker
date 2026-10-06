@@ -12,7 +12,6 @@ from pathlib import Path
 
 from chartbreaker.observability.store import ObservabilityStore
 
-
 # Reuse the v1 schema fixture pattern: seed a pre-v3 DB (this is the
 # CURRENT v2 schema, i.e. no proposed_campaigns) and confirm the
 # migration adds the table while preserving the existing rows.
@@ -127,7 +126,7 @@ def test_v2_db_gets_proposed_campaigns_table(tmp_path: Path) -> None:
         # Table is created.
         cols = {
             row[1]
-            for row in store._conn.execute(  # noqa: SLF001
+            for row in store._conn.execute(
                 "PRAGMA table_info(proposed_campaigns)"
             ).fetchall()
         }
@@ -136,7 +135,7 @@ def test_v2_db_gets_proposed_campaigns_table(tmp_path: Path) -> None:
         assert "mutation_budget" in cols
         assert "run_id" in cols
         # Schema version reports 3 after migration.
-        version = store._conn.execute(  # noqa: SLF001
+        version = store._conn.execute(
             "SELECT version FROM schema_version"
         ).fetchone()[0]
         assert version == 3
@@ -153,12 +152,12 @@ def test_migration_is_idempotent(tmp_path: Path) -> None:
     with ObservabilityStore(db_path=db_path, trace_path=trace_path) as store:
         cols = {
             row[1]
-            for row in store._conn.execute(  # noqa: SLF001
+            for row in store._conn.execute(
                 "PRAGMA table_info(proposed_campaigns)"
             ).fetchall()
         }
         assert "proposal_id" in cols
-        version = store._conn.execute(  # noqa: SLF001
+        version = store._conn.execute(
             "SELECT version FROM schema_version"
         ).fetchone()[0]
         assert version == 3
@@ -170,14 +169,14 @@ def test_fresh_db_creates_proposed_campaigns(tmp_path: Path) -> None:
     trace_path = tmp_path / "traces.jsonl"
     with ObservabilityStore(db_path=db_path, trace_path=trace_path) as store:
         # Table exists.
-        rows = store._conn.execute(  # noqa: SLF001
+        rows = store._conn.execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND name='proposed_campaigns'"
         ).fetchall()
         assert rows
         # Indexes exist.
         idx_names = {
             row[0]
-            for row in store._conn.execute(  # noqa: SLF001
+            for row in store._conn.execute(
                 "SELECT name FROM sqlite_master WHERE type='index' "
                 "AND tbl_name='proposed_campaigns'"
             ).fetchall()
@@ -192,7 +191,7 @@ def test_status_check_constraint_rejects_unknown_value(tmp_path: Path) -> None:
     trace_path = tmp_path / "traces.jsonl"
     with ObservabilityStore(db_path=db_path, trace_path=trace_path) as store:
         try:
-            store._conn.execute(  # noqa: SLF001
+            store._conn.execute(
                 "INSERT INTO proposed_campaigns "
                 "(proposal_id, created_at, subcategory_id, specialist, "
                 " mutation_budget, rationale, priority_score, est_cost_usd, status) "

@@ -28,7 +28,6 @@ import httpx  # noqa: E402
 from chartbreaker import config  # noqa: E402
 from chartbreaker.target_endpoints import LOGIN_SUBMIT_PATH  # noqa: E402
 
-
 _PUBPID_DATA_VALUE_RE = re.compile(
     r"pubpid[^<>]*?data-value=['\"]([^'\"]+)['\"]", re.IGNORECASE
 )

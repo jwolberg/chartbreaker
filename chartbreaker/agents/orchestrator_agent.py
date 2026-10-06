@@ -151,7 +151,7 @@ class Orchestrator:
 
     def __init__(
         self,
-        store: "ObservabilityStore",
+        store: ObservabilityStore,
         run_id: str,
         budgets: Budgets = BUDGETS,
     ) -> None:

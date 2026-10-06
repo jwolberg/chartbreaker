@@ -11,7 +11,6 @@ from chartbreaker.state import (
     AttackAttempt,
     CampaignBrief,
     CostObservation,
-    HttpRequestShape,
 )
 
 

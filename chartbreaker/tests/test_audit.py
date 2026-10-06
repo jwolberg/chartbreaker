@@ -22,7 +22,6 @@ from chartbreaker.state import (
     Verdict,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -125,7 +124,7 @@ def _seed_verdict(
 
 
 def _db_path(store: ObservabilityStore) -> Path:
-    return store._db_path  # noqa: SLF001 — test-only access
+    return store._db_path  # test-only access
 
 
 # ---------------------------------------------------------------------------
@@ -403,7 +402,7 @@ def _emit_specialist_failed(
     error_message: str = "LLM returned non-JSON",
 ) -> None:
     """Helper: write a `specialist_failed` event the way cli.py does."""
-    store._emit_event(  # noqa: SLF001 — test-only access
+    store._emit_event(  # test-only access
         run_id,
         agent="red_team_lead",
         event_type="specialist_failed",

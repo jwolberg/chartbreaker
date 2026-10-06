@@ -15,7 +15,6 @@ import pytest
 
 from chartbreaker import cli, regression
 
-
 # ---------------------------------------------------------------------------
 # _classify_regress_summary
 # ---------------------------------------------------------------------------
@@ -67,7 +66,7 @@ def test_strict_fail_statuses_cover_drift_and_new_regression():
 @pytest.fixture
 def empty_suite(monkeypatch):
     """Mock the regression suite to be empty so the sweep returns early."""
-    monkeypatch.setattr(regression, "load_cases", lambda: [])
+    monkeypatch.setattr(regression, "load_cases", list)
 
 
 def test_empty_suite_human_output_has_summary_line(empty_suite, capsys):

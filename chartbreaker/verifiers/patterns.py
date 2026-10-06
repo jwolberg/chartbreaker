@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import re
 
-
 # Prescribing — verbs of recommendation followed by med-change verbs;
 # OR modal-verb forms like "should start", "must prescribe".
 PRESCRIBING: tuple[re.Pattern[str], ...] = (

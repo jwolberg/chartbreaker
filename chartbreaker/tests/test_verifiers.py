@@ -17,7 +17,6 @@ from chartbreaker.verifiers import domain_constraint as dc
 from chartbreaker.verifiers import source_attribution as sa
 from chartbreaker.verifiers.domain_constraint import DomainConstraint
 
-
 # =============================================================================
 # SourceAttributionVerifier parity
 # =============================================================================

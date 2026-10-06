@@ -40,9 +40,10 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Awaitable, Callable, Literal
+from typing import Literal
 
 from chartbreaker.agents import orchestrator_agent, red_team_lead
 from chartbreaker.config import BUDGETS

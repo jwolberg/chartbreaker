@@ -154,7 +154,7 @@ class TargetClient:
         self._csrf_token: str | None = None
         self._authenticated: bool = False
 
-    async def __aenter__(self) -> "TargetClient":
+    async def __aenter__(self) -> TargetClient:
         self._client = httpx.AsyncClient(
             base_url=self._base_url,
             follow_redirects=True,

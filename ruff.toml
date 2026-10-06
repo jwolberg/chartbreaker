@@ -1,0 +1,30 @@
+# Ruff lint + format config. Version pinned in requirements-dev.txt.
+# Rules are listed explicitly so results don't shift with ruff's defaults.
+
+target-version = "py310"
+line-length = 88
+extend-exclude = ["graphify-out", "cribs-output", "observability", "evals"]
+
+[lint]
+select = [
+    "F",      # pyflakes
+    "E4", "E7", "E9",  # pycodestyle errors (line length is left to the formatter)
+    "I",      # isort
+    "UP",     # pyupgrade
+    "B",      # bugbear
+    "SIM",    # simplify
+    "PIE",    # misc lints
+    "ISC",    # implicit string concatenation
+    "BLE",    # blind except
+    "TRY004", # TypeError for type checks
+    "SLF",    # private member access
+    "ASYNC",  # blocking calls in async code
+    "PYI034", # __enter__ returns Self
+    "RUF",    # ruff-specific (incl. unused noqa)
+]
+# Typographic dashes / multiplication signs in prose are intentional.
+ignore = ["RUF001", "RUF002", "RUF003"]
+
+[lint.per-file-ignores]
+# Tests exercise _private helpers on purpose.
+"chartbreaker/tests/**" = ["SLF001"]

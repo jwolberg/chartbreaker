@@ -33,7 +33,12 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent
 _DOTENV_PATH = _REPO_ROOT / ".env"
 load_dotenv(_DOTENV_PATH)
 
-from chartbreaker import calibration, config, llm_client, regression  # noqa: E402  (after load_dotenv)
+from chartbreaker import (  # noqa: E402  (after load_dotenv)
+    calibration,
+    config,
+    llm_client,
+    regression,
+)
 from chartbreaker.agents import orchestrator_agent, red_team_lead
 from chartbreaker.agents.judge_agent import judge, judge_with_semantic
 from chartbreaker.observability.store import ObservabilityStore
@@ -228,7 +233,7 @@ async def run_mvp_loop(
     # the verbose trace survives the run. "auto" → observability/run-<run_id>.log.
     log_handler = _attach_run_log(run_id, log_file) if log_file is not None else None
 
-    print(f"ChartBreaker MVP loop")
+    print("ChartBreaker MVP loop")
     print(f"  target:   {config.TARGET_BASE_URL}")
     print(f"  run_id:   {run_id}")
     print(f"  operator: {operator}")
@@ -267,7 +272,7 @@ async def run_mvp_loop(
                             store,
                             enable_semantic_judge=enable_semantic_judge,
                         )
-                    except Exception as exc:  # noqa: BLE001 — bound to brief boundary
+                    except Exception as exc:  # bound to brief boundary
                         # A single specialist failure (e.g. LLM returns bad
                         # JSON, target returns malformed cookie, transient
                         # network error) used to abort the whole run because
@@ -477,7 +482,7 @@ async def run_regression_sweep(
     per_case: list[dict] = []
 
     if not emit_json:
-        print(f"ChartBreaker regression sweep")
+        print("ChartBreaker regression sweep")
         print(f"  target:   {config.TARGET_BASE_URL}")
         print(f"  run_id:   {run_id}")
         print(f"  operator: {operator}")

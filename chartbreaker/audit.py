@@ -23,10 +23,11 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Iterator, Literal
+from typing import Literal
 
 from chartbreaker.config import BUDGETS, FIXTURE_PIDS, RUNS_SQLITE
 

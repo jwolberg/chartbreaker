@@ -12,7 +12,6 @@ environment that mirrors the minimal runtime requirements.txt).
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 import pytest
@@ -22,9 +21,9 @@ import pytest
 # erroring at collection time.
 pytest.importorskip("streamlit")
 
-from chartbreaker.observability import proposal_tab  # noqa: E402
-from chartbreaker.observability.store import ObservabilityStore  # noqa: E402
-from chartbreaker.orchestrator import proposal_harness  # noqa: E402
+from chartbreaker.observability import proposal_tab
+from chartbreaker.observability.store import ObservabilityStore
+from chartbreaker.orchestrator import proposal_harness
 
 
 async def _stub_rationale(**_kwargs) -> str:
@@ -46,7 +45,7 @@ def test_check_api_key_prereqs_lists_missing(monkeypatch: pytest.MonkeyPatch) ->
         "OPENAI_API_KEY",
     ):
         monkeypatch.delenv(var, raising=False)
-    missing = proposal_tab._check_api_key_prereqs()  # noqa: SLF001
+    missing = proposal_tab._check_api_key_prereqs()
     assert set(missing) >= {
         "CHARTBREAKER_TARGET_USER",
         "CHARTBREAKER_TARGET_PASSWORD",
@@ -61,7 +60,7 @@ def test_open_store_opens_against_given_path(tmp_path: Path) -> None:
     db_path = tmp_path / "runs.sqlite"
     trace_path = tmp_path / "traces.jsonl"
     # First open creates the schema, including proposed_campaigns.
-    with proposal_tab._open_store(str(db_path)) as store:  # noqa: SLF001
+    with proposal_tab._open_store(str(db_path)) as store:
         # Persist one proposal so the next session can read it back.
         proposal_harness.propose(store, n=1, render_rationale=_stub_rationale)
 

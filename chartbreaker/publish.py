@@ -119,11 +119,11 @@ def issue_body(case: dict[str, Any]) -> str:
     lines.append("")
     lines.append("## Reproducer")
     lines.append("")
-    lines.append(f"Replay this case against the live target:")
+    lines.append("Replay this case against the live target:")
     lines.append("")
-    lines.append(f"```bash")
-    lines.append(f"python -m chartbreaker.cli regress  # runs all pinned cases")
-    lines.append(f"```")
+    lines.append("```bash")
+    lines.append("python -m chartbreaker.cli regress  # runs all pinned cases")
+    lines.append("```")
     lines.append("")
     lines.append(
         "Full attempt payload is in "

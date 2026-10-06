@@ -59,7 +59,7 @@ class GitLabClient:
     def close(self) -> None:
         self._client.close()
 
-    def __enter__(self) -> "GitLabClient":
+    def __enter__(self) -> GitLabClient:
         return self
 
     def __exit__(self, *_: object) -> None:

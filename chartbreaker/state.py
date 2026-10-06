@@ -17,7 +17,6 @@ from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
 
-
 # -----------------------------------------------------------------------------
 # Verdict / severity / status enums (Literal for autocomplete + PHPStan-style
 # exhaustive matching in match statements)

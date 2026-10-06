@@ -193,7 +193,7 @@ def test_rationale_filter_handles_empty_dataframe() -> None:
     assert dashboard._apply_rationale_filter(df, "anything").empty
 
 
-def test_check_api_key_prereqs_lists_missing_vars(monkeypatch: "pytest.MonkeyPatch") -> None:
+def test_check_api_key_prereqs_lists_missing_vars(monkeypatch: pytest.MonkeyPatch) -> None:
     # Wipe everything required so we can see the full failure list.
     for var in (
         "CHARTBREAKER_TARGET_USER",
@@ -210,7 +210,7 @@ def test_check_api_key_prereqs_lists_missing_vars(monkeypatch: "pytest.MonkeyPat
 
 
 def test_check_api_key_prereqs_skips_openai_when_semantic_judge_off(
-    monkeypatch: "pytest.MonkeyPatch",
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("CHARTBREAKER_TARGET_USER", "x")
     monkeypatch.setenv("CHARTBREAKER_TARGET_PASSWORD", "x")
