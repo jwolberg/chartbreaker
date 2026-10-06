@@ -60,3 +60,10 @@ backlog tickets. Newest entries at the bottom.
   raise only if gather() returned a different count (a bug either way).
 - **Deviation:** ASYNC240 ×3 (blocking `Path` ops in `auto_run`) moved to #0005
   alongside ASYNC251. Same file, same fix theme.
+
+## 2026-10-06 — #0005 auto_run event-loop blocking
+
+- `time.sleep` → `await asyncio.sleep` between iterations; `import time` dropped.
+  No test patched `time.sleep`, so no test changes were needed.
+- ASYNC240 (stop-file `exists`/`unlink`) kept with `noqa`. Each is one local
+  stat/unlink; `asyncio.to_thread` would add complexity for no measurable gain.

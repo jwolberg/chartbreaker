@@ -29,7 +29,6 @@ import asyncio
 import json
 import logging
 import os
-import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
@@ -198,7 +197,8 @@ async def auto_run_loop(
     from datetime import datetime, timezone
 
     stop_path = Path(stop_file)
-    stop_path.unlink(missing_ok=True)  # clear stale stop-file from prior session
+    # Stop-file ops are a single local stat/unlink; not worth a thread hop.
+    stop_path.unlink(missing_ok=True)  # noqa: ASYNC240 — clear stale stop-file
 
     state = AutoRunState(
         pid=os.getpid(),
@@ -219,7 +219,7 @@ async def auto_run_loop(
     try:
         for i in range(max_iterations):
             # Stop file check — fast path before doing anything expensive.
-            if stop_path.exists():
+            if stop_path.exists():  # noqa: ASYNC240
                 state.stopped = True
                 state.stopped_reason = "stop-file requested"
                 state.notes.append(
@@ -266,7 +266,7 @@ async def auto_run_loop(
 
             # Light pause so a fast loop doesn't hammer the target's
             # rate limits + gives the stop-file a chance between ticks.
-            time.sleep(STOP_POLL_SECONDS)
+            await asyncio.sleep(STOP_POLL_SECONDS)
         else:
             state.stopped = True
             state.stopped_reason = "max iterations reached"
@@ -276,7 +276,7 @@ async def auto_run_loop(
             state.stopped = True
             state.stopped_reason = state.stopped_reason or "loop exited"
         state.write()
-        stop_path.unlink(missing_ok=True)
+        stop_path.unlink(missing_ok=True)  # noqa: ASYNC240
         logger.info(
             "auto-run finished: iterations=%d cost=$%.4f reason=%s",
             state.iterations_done,
