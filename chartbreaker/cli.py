@@ -118,7 +118,9 @@ async def _run_one_brief(
 
     if cost is not None:
         # LLM specialist — re-bind cost to the attempt_id we just generated.
-        store.write_cost(run_id, cost.model_copy(update={"attempt_id": attempt.attempt_id}))
+        store.write_cost(
+            run_id, cost.model_copy(update={"attempt_id": attempt.attempt_id})
+        )
     else:
         # Deterministic specialist — record $0 cost for accounting completeness.
         store.write_cost(
@@ -284,7 +286,8 @@ async def run_mvp_loop(
                         # post-run.
                         logger.exception(
                             "brief %s (Cat %s) failed; continuing",
-                            brief.campaign_id, brief.subcategory_id,
+                            brief.campaign_id,
+                            brief.subcategory_id,
                         )
                         print(
                             f"    ✗ Cat {brief.subcategory_id} specialist "
@@ -911,7 +914,9 @@ def main() -> None:
         sys.exit(_audit_run_cli(args, _audit))
     elif args.cmd == "calibrate":
         summary = asyncio.run(calibration.run_calibration())
-        print(f"\nJudge calibration: {summary.matched}/{summary.total} = {summary.accuracy:.2%}")
+        print(
+            f"\nJudge calibration: {summary.matched}/{summary.total} = {summary.accuracy:.2%}"
+        )
         for result in summary.results:
             mark = "OK " if result.matched else "MISS"
             print(

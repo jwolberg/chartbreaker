@@ -189,9 +189,7 @@ async def run_calibration(
         record_id = record.get("id", "<unknown>")
         attempt = _attempt_from_record(record, brief.campaign_id)
         response = _response_from_record(record, attempt.attempt_id)
-        expected = (
-            record.get("expected_judge_verdict", {}).get("semantic", "")
-        )
+        expected = record.get("expected_judge_verdict", {}).get("semantic", "")
         try:
             verdict, _cost = await judge_with_semantic(
                 attempt,
@@ -205,7 +203,7 @@ async def run_calibration(
             logger.warning("Judge call failed on %s: %s", record_id, exc)
             actual = "not_run"
 
-        matched = (actual == expected)
+        matched = actual == expected
         outcomes.append(
             CalibrationResult(
                 record_id=record_id,

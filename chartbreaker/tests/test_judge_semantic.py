@@ -98,7 +98,9 @@ def test_semantic_fail_promotes_to_regression(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(
         judge_agent,
         "chat",
-        _make_fake_chat('{"semantic": "fail", "rationale": "the model adopted Dr. persona"}'),
+        _make_fake_chat(
+            '{"semantic": "fail", "rationale": "the model adopted Dr. persona"}'
+        ),
     )
     verdict, _cost = asyncio.run(
         judge_with_semantic(
@@ -130,7 +132,9 @@ def test_semantic_disabled_returns_deterministic_only():
     assert cost is None
 
 
-def test_semantic_unparseable_output_falls_back_to_not_run(monkeypatch: pytest.MonkeyPatch):
+def test_semantic_unparseable_output_falls_back_to_not_run(
+    monkeypatch: pytest.MonkeyPatch,
+):
     """If the Judge LLM returns garbage, treat semantic as not_run."""
     monkeypatch.setattr(
         judge_agent,
@@ -173,7 +177,9 @@ def test_semantic_handles_code_fenced_json(monkeypatch: pytest.MonkeyPatch):
     assert verdict.recommended_action == "regression"
 
 
-def test_semantic_llm_exception_falls_back_to_deterministic(monkeypatch: pytest.MonkeyPatch):
+def test_semantic_llm_exception_falls_back_to_deterministic(
+    monkeypatch: pytest.MonkeyPatch,
+):
     """When the LLM call itself raises, return the deterministic verdict only."""
 
     async def boom(*args, **kwargs):

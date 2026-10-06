@@ -60,6 +60,7 @@ FIXTURE_PIDS: list[int] = [1, 2, 3]
 # Model registry — per-role provider + model dispatch
 # -----------------------------------------------------------------------------
 
+
 @dataclass(frozen=True)
 class ProviderConfig:
     """An OpenAI-compatible chat-completion endpoint."""
@@ -105,10 +106,10 @@ class RoleConfig:
 MODEL_REGISTRY: dict[str, RoleConfig] = {
     # Control plane — OpenAI gpt-5.4-nano default; escalate per role
     # if the calibration set degrades.
-    "orchestrator":    RoleConfig("orchestrator",    "openai", "gpt-5.4-nano"),
-    "red_team_lead":   RoleConfig("red_team_lead",   "openai", "gpt-5.4-nano"),
-    "judge_semantic":  RoleConfig("judge_semantic",  "openai", "gpt-5.4-nano"),
-    "scribe":          RoleConfig("scribe",          "openai", "gpt-5.4-nano"),
+    "orchestrator": RoleConfig("orchestrator", "openai", "gpt-5.4-nano"),
+    "red_team_lead": RoleConfig("red_team_lead", "openai", "gpt-5.4-nano"),
+    "judge_semantic": RoleConfig("judge_semantic", "openai", "gpt-5.4-nano"),
+    "scribe": RoleConfig("scribe", "openai", "gpt-5.4-nano"),
     # Offensive specialists — OpenRouter uncensored fine-tune.
     # Default: nousresearch/hermes-3-llama-3.1-70b ($0.30/M, 131k ctx).
     # Hermes 3 is lightly aligned and rarely refuses red-team prompts.
@@ -116,10 +117,18 @@ MODEL_REGISTRY: dict[str, RoleConfig] = {
     # was the previous default but the shared rate limit makes it
     # unusable for sustained runs. Commercially-aligned frontier models
     # remain disallowed for this role per docs/ARCHITECTURE.md § Injector.
-    "injector":          RoleConfig("injector",          "openrouter", "nousresearch/hermes-3-llama-3.1-70b"),
-    "conversationalist": RoleConfig("conversationalist", "openrouter", "nousresearch/hermes-3-llama-3.1-70b"),
-    "smuggler":          RoleConfig("smuggler",          "openrouter", "nousresearch/hermes-3-llama-3.1-70b"),
-    "impersonator":      RoleConfig("impersonator",      "openrouter", "nousresearch/hermes-3-llama-3.1-70b"),
+    "injector": RoleConfig(
+        "injector", "openrouter", "nousresearch/hermes-3-llama-3.1-70b"
+    ),
+    "conversationalist": RoleConfig(
+        "conversationalist", "openrouter", "nousresearch/hermes-3-llama-3.1-70b"
+    ),
+    "smuggler": RoleConfig(
+        "smuggler", "openrouter", "nousresearch/hermes-3-llama-3.1-70b"
+    ),
+    "impersonator": RoleConfig(
+        "impersonator", "openrouter", "nousresearch/hermes-3-llama-3.1-70b"
+    ),
     # Deterministic specialists (Saboteur, Cracker, Glutton) have no model
     # and are absent from this registry by design.
 }
@@ -153,6 +162,7 @@ def get_provider_api_key(provider_name: str) -> str | None:
 # -----------------------------------------------------------------------------
 # Budgets — Orchestrator halts campaigns that exceed these without signal
 # -----------------------------------------------------------------------------
+
 
 @dataclass(frozen=True)
 class Budgets:

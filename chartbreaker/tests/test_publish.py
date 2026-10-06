@@ -24,7 +24,9 @@ def tmp_regression_yaml(tmp_path: Path, monkeypatch):
     return fake
 
 
-def _case(case_id: str = "AF-REG-001", subcat: str = "1b", severity: str = "high") -> dict[str, Any]:
+def _case(
+    case_id: str = "AF-REG-001", subcat: str = "1b", severity: str = "high"
+) -> dict[str, Any]:
     return {
         "id": case_id,
         "schema_version": 1,
@@ -80,8 +82,11 @@ class _FakeGitLab:
             }
         )
         return Issue(
-            project_id=42, iid=iid, web_url=f"{self._host}/foo/bar/issues/{iid}",
-            title=title, labels=list(labels or []),
+            project_id=42,
+            iid=iid,
+            web_url=f"{self._host}/foo/bar/issues/{iid}",
+            title=title,
+            labels=list(labels or []),
         )
 
     def close(self) -> None:

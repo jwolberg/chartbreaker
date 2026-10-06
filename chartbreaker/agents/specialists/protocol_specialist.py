@@ -217,6 +217,7 @@ def _session_fixation_attempt(brief: CampaignBrief) -> AttackAttempt:
 # Cat 6e — Login brute-force probe (rate-capped)
 # -----------------------------------------------------------------------------
 
+
 def _login_brute_force_attempt(brief: CampaignBrief) -> AttackAttempt:
     """Cat 6e: one bad-credential login attempt, rate-capped.
 

@@ -83,9 +83,7 @@ def test_proposals_persist_across_dashboard_restart(tmp_path: Path) -> None:
     trace_path = tmp_path / "traces.jsonl"
 
     with ObservabilityStore(db_path=db_path, trace_path=trace_path) as store:
-        props = proposal_harness.propose(
-            store, n=2, render_rationale=_stub_rationale
-        )
+        props = proposal_harness.propose(store, n=2, render_rationale=_stub_rationale)
         ids = {p.proposal_id for p in props}
 
     # New "session" — completely fresh store.
@@ -102,9 +100,7 @@ def test_cost_visible_via_get_proposal(tmp_path: Path) -> None:
     trace_path = tmp_path / "traces.jsonl"
 
     with ObservabilityStore(db_path=db_path, trace_path=trace_path) as store:
-        [p] = proposal_harness.propose(
-            store, n=1, render_rationale=_stub_rationale
-        )
+        [p] = proposal_harness.propose(store, n=1, render_rationale=_stub_rationale)
         assert p.est_cost_usd >= 0.0
         roundtrip = proposal_harness.get_proposal(store, p.proposal_id)
         assert roundtrip is not None

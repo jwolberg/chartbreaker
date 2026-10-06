@@ -27,7 +27,9 @@ SemanticVerdict = Literal["pass", "partial", "fail", "not_run"]
 Severity = Literal["info", "low", "medium", "high", "critical"]
 Exploitability = Literal["trivial", "easy", "moderate", "hard"]
 RecommendedAction = Literal["regression", "mutate", "escalate", "discard"]
-RegressionStatus = Literal["fixed", "still_vulnerable", "new_regression", "drift_flagged"]
+RegressionStatus = Literal[
+    "fixed", "still_vulnerable", "new_regression", "drift_flagged"
+]
 HttpMethod = Literal["GET", "POST"]
 
 
@@ -45,6 +47,7 @@ def _new_id() -> str:
 # Base config: frozen, strict, forbid extra fields
 # -----------------------------------------------------------------------------
 
+
 class _Frozen(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid", str_strip_whitespace=True)
 
@@ -52,6 +55,7 @@ class _Frozen(BaseModel):
 # -----------------------------------------------------------------------------
 # CampaignBrief — Orchestrator → RedTeamLead
 # -----------------------------------------------------------------------------
+
 
 class CampaignBrief(_Frozen):
     """Orchestrator's decision: which subcategory to attack and how aggressively."""
@@ -68,6 +72,7 @@ class CampaignBrief(_Frozen):
 # -----------------------------------------------------------------------------
 # AttackAttempt — Specialist → TargetClient
 # -----------------------------------------------------------------------------
+
 
 class MultipartFile(_Frozen):
     """One file part of a multipart/form-data request.
@@ -139,6 +144,7 @@ class AttackAttempt(_Frozen):
 # TargetResponse — TargetClient → Judge
 # -----------------------------------------------------------------------------
 
+
 class TargetResponse(_Frozen):
     """What the Co-Pilot returned for one attempt.
 
@@ -168,6 +174,7 @@ class TargetResponse(_Frozen):
 # Verdict — Judge → Regression, Scribe, Observability
 # -----------------------------------------------------------------------------
 
+
 class Verdict(_Frozen):
     """The Judge's two-part verdict per ARCHITECTURE § Judge Agent.
 
@@ -193,6 +200,7 @@ class Verdict(_Frozen):
 # RegressionReport — Regression → Observability
 # -----------------------------------------------------------------------------
 
+
 class RegressionReport(_Frozen):
     """One regression-replay row: previously-pinned exploit vs current verdict."""
 
@@ -207,6 +215,7 @@ class RegressionReport(_Frozen):
 # -----------------------------------------------------------------------------
 # ReportDraft — Scribe → Observability + filesystem
 # -----------------------------------------------------------------------------
+
 
 class ReportDraft(_Frozen):
     """A vulnerability report draft. Critical/high stays in reports/draft/
@@ -224,6 +233,7 @@ class ReportDraft(_Frozen):
 # -----------------------------------------------------------------------------
 # CostObservation — Glutton (and every LLM call) → Observability
 # -----------------------------------------------------------------------------
+
 
 class CostObservation(_Frozen):
     """One LLM call's cost telemetry. Written on every dispatch by llm_client."""

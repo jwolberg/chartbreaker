@@ -91,8 +91,7 @@ async def dispatch(
     if brief.subcategory_id not in _ROUTING_TABLE:
         known = ", ".join(sorted(_ROUTING_TABLE))
         raise ValueError(
-            f"No specialist routes subcategory {brief.subcategory_id!r}. "
-            f"Known: {known}"
+            f"No specialist routes subcategory {brief.subcategory_id!r}. Known: {known}"
         )
 
     specialist, needs_seed = _ROUTING_TABLE[brief.subcategory_id]

@@ -195,7 +195,10 @@ class TargetClient:
 
         # OpenEMR returns 200 on bad credentials too (re-renders the login form).
         # Detect failure by spotting the session-timeout / login-screen marker.
-        if "login_screen.php?error" in response.text or "timed_out = true" in response.text:
+        if (
+            "login_screen.php?error" in response.text
+            or "timed_out = true" in response.text
+        ):
             raise TargetUnreachableError(
                 "login appeared to succeed (HTTP 200) but response redirects to "
                 "login_screen — credentials are likely wrong or the target rejected "
@@ -284,14 +287,26 @@ class TargetClient:
         llm_block: dict[str, Any] = (
             body.get("llm", {}) if isinstance(body, dict) else {}
         )
-        structured = llm_block.get("structured") if isinstance(llm_block, dict) else None
-        structured_json = json.dumps(structured) if isinstance(structured, dict) else None
+        structured = (
+            llm_block.get("structured") if isinstance(llm_block, dict) else None
+        )
+        structured_json = (
+            json.dumps(structured) if isinstance(structured, dict) else None
+        )
 
         php_verifier_summary = {
-            "source_verification": llm_block.get("source_verification") if isinstance(llm_block, dict) else None,
-            "domain_verification": llm_block.get("domain_verification") if isinstance(llm_block, dict) else None,
-            "llm_status": llm_block.get("status") if isinstance(llm_block, dict) else None,
-            "failure_reason": llm_block.get("failure_reason") if isinstance(llm_block, dict) else None,
+            "source_verification": llm_block.get("source_verification")
+            if isinstance(llm_block, dict)
+            else None,
+            "domain_verification": llm_block.get("domain_verification")
+            if isinstance(llm_block, dict)
+            else None,
+            "llm_status": llm_block.get("status")
+            if isinstance(llm_block, dict)
+            else None,
+            "failure_reason": llm_block.get("failure_reason")
+            if isinstance(llm_block, dict)
+            else None,
             # Walk the response context to collect every valid source ID so the
             # Judge can run its SourceAttributionVerifier port against the same
             # allowed set the PHP verifier used. Path matches
@@ -312,17 +327,25 @@ class TargetClient:
             if structured_json is not None
             else (response.text[:2000] if response.text else None),
             latency_ms=latency_ms,
-            prompt_tokens=llm_block.get("prompt_tokens") if isinstance(llm_block, dict) else None,
-            completion_tokens=llm_block.get("completion_tokens") if isinstance(llm_block, dict) else None,
+            prompt_tokens=llm_block.get("prompt_tokens")
+            if isinstance(llm_block, dict)
+            else None,
+            completion_tokens=llm_block.get("completion_tokens")
+            if isinstance(llm_block, dict)
+            else None,
             # Re-use audit_log_id to pass the PHP verifier summary to the Judge.
             # Phase 2 should split this into a proper dedicated field.
             audit_log_id=json.dumps(php_verifier_summary),
-            target_version=llm_block.get("model", "unknown") if isinstance(llm_block, dict) else "unknown",
+            target_version=llm_block.get("model", "unknown")
+            if isinstance(llm_block, dict)
+            else "unknown",
             response_cookies=response_cookies,
             set_cookie_headers=set_cookie_headers,
         )
 
-    async def _dispatch_copilot_briefing(self, attempt: AttackAttempt) -> httpx.Response:
+    async def _dispatch_copilot_briefing(
+        self, attempt: AttackAttempt
+    ) -> httpx.Response:
         """POST a briefing (and optionally a sequence of followups) to the Co-Pilot.
 
         Multi-turn attacks send turn 1 as `action: briefing`, turns 2+ as

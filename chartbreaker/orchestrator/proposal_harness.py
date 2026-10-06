@@ -70,7 +70,9 @@ _AVG_JUDGE_COMPLETION_TOKENS = 200
 # attempt LLM cost is strictly the Judge follow-up. LLM specialists pay
 # for both. Kept here rather than imported from red_team_lead so the
 # harness doesn't break if the routing table grows new shapes.
-_DETERMINISTIC_SPECIALISTS: frozenset[str] = frozenset({"saboteur", "cracker", "glutton"})
+_DETERMINISTIC_SPECIALISTS: frozenset[str] = frozenset(
+    {"saboteur", "cracker", "glutton"}
+)
 
 _MIN_MUTATION_BUDGET = 1
 _MAX_MUTATION_BUDGET = 20
@@ -278,12 +280,16 @@ def _row_to_proposal(row: dict) -> ProposedCampaign:
 
 def list_pending(store: ObservabilityStore) -> list[ProposedCampaign]:
     """Return rows with status='proposed', most-recent first."""
-    return [_row_to_proposal(r) for r in store.list_proposed_campaigns(status="proposed")]
+    return [
+        _row_to_proposal(r) for r in store.list_proposed_campaigns(status="proposed")
+    ]
 
 
 def list_approved(store: ObservabilityStore) -> list[ProposedCampaign]:
     """Return rows with status='approved' (awaiting batch launch)."""
-    return [_row_to_proposal(r) for r in store.list_proposed_campaigns(status="approved")]
+    return [
+        _row_to_proposal(r) for r in store.list_proposed_campaigns(status="approved")
+    ]
 
 
 def list_all(store: ObservabilityStore) -> list[ProposedCampaign]:
@@ -291,7 +297,9 @@ def list_all(store: ObservabilityStore) -> list[ProposedCampaign]:
     return [_row_to_proposal(r) for r in store.list_proposed_campaigns()]
 
 
-def get_proposal(store: ObservabilityStore, proposal_id: str) -> ProposedCampaign | None:
+def get_proposal(
+    store: ObservabilityStore, proposal_id: str
+) -> ProposedCampaign | None:
     row = store.get_proposed_campaign(proposal_id)
     return _row_to_proposal(row) if row else None
 

@@ -135,9 +135,9 @@ def test_v2_db_gets_proposed_campaigns_table(tmp_path: Path) -> None:
         assert "mutation_budget" in cols
         assert "run_id" in cols
         # Schema version reports 3 after migration.
-        version = store._conn.execute(
-            "SELECT version FROM schema_version"
-        ).fetchone()[0]
+        version = store._conn.execute("SELECT version FROM schema_version").fetchone()[
+            0
+        ]
         assert version == 3
 
 
@@ -157,9 +157,9 @@ def test_migration_is_idempotent(tmp_path: Path) -> None:
             ).fetchall()
         }
         assert "proposal_id" in cols
-        version = store._conn.execute(
-            "SELECT version FROM schema_version"
-        ).fetchone()[0]
+        version = store._conn.execute("SELECT version FROM schema_version").fetchone()[
+            0
+        ]
         assert version == 3
 
 
@@ -196,7 +196,17 @@ def test_status_check_constraint_rejects_unknown_value(tmp_path: Path) -> None:
                 "(proposal_id, created_at, subcategory_id, specialist, "
                 " mutation_budget, rationale, priority_score, est_cost_usd, status) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                ("p1", "2026-05-12T00:00:00", "1b", "injector", 1, "r", 1.0, 0.001, "weird"),
+                (
+                    "p1",
+                    "2026-05-12T00:00:00",
+                    "1b",
+                    "injector",
+                    1,
+                    "r",
+                    1.0,
+                    0.001,
+                    "weird",
+                ),
             )
         except sqlite3.IntegrityError:
             pass

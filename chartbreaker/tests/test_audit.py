@@ -263,9 +263,7 @@ def test_disagreement_below_threshold_clean(store):
     # 5 agreeing verdicts, 1 disagreeing → 16.7% disagreement.
     for _ in range(5):
         attempt = _seed_attempt(store, run_id, brief.campaign_id)
-        _seed_verdict(
-            store, run_id, attempt, verifier_replay="pass", semantic="pass"
-        )
+        _seed_verdict(store, run_id, attempt, verifier_replay="pass", semantic="pass")
     attempt = _seed_attempt(store, run_id, brief.campaign_id)
     _seed_verdict(store, run_id, attempt, verifier_replay="pass", semantic="fail")
     report = audit.audit_run(run_id, db_path=_db_path(store))
@@ -278,9 +276,7 @@ def test_disagreement_above_threshold_flagged(store):
     # 5 disagreements + 0 agreement → 100% disagreement.
     for _ in range(5):
         attempt = _seed_attempt(store, run_id, brief.campaign_id)
-        _seed_verdict(
-            store, run_id, attempt, verifier_replay="pass", semantic="fail"
-        )
+        _seed_verdict(store, run_id, attempt, verifier_replay="pass", semantic="fail")
     report = audit.audit_run(run_id, db_path=_db_path(store))
     spikes = [f for f in report.findings if f.check == "verdict_disagreement_spike"]
     assert len(spikes) == 1
@@ -293,9 +289,7 @@ def test_disagreement_below_minimum_sample_size_skipped(store):
     # 2 disagreeing verdicts — below MIN_VERDICTS_FOR_DISAGREEMENT.
     for _ in range(2):
         attempt = _seed_attempt(store, run_id, brief.campaign_id)
-        _seed_verdict(
-            store, run_id, attempt, verifier_replay="pass", semantic="fail"
-        )
+        _seed_verdict(store, run_id, attempt, verifier_replay="pass", semantic="fail")
     report = audit.audit_run(run_id, db_path=_db_path(store))
     assert all(f.check != "verdict_disagreement_spike" for f in report.findings)
 
@@ -310,9 +304,7 @@ def test_homogeneous_below_minimum_sample_size_skipped(store):
     brief = _seed_campaign(store, run_id)
     for _ in range(3):
         attempt = _seed_attempt(store, run_id, brief.campaign_id)
-        _seed_verdict(
-            store, run_id, attempt, verifier_replay="pass", semantic="pass"
-        )
+        _seed_verdict(store, run_id, attempt, verifier_replay="pass", semantic="pass")
     report = audit.audit_run(run_id, db_path=_db_path(store))
     assert all(f.check != "homogeneous_verdicts" for f in report.findings)
 
@@ -322,9 +314,7 @@ def test_homogeneous_all_pass_flagged(store):
     brief = _seed_campaign(store, run_id)
     for _ in range(audit.MIN_ATTEMPTS_FOR_HOMOGENEOUS):
         attempt = _seed_attempt(store, run_id, brief.campaign_id)
-        _seed_verdict(
-            store, run_id, attempt, verifier_replay="pass", semantic="pass"
-        )
+        _seed_verdict(store, run_id, attempt, verifier_replay="pass", semantic="pass")
     report = audit.audit_run(run_id, db_path=_db_path(store))
     homog = [f for f in report.findings if f.check == "homogeneous_verdicts"]
     assert len(homog) == 1
@@ -340,9 +330,7 @@ def test_homogeneous_mixed_clean(store):
         _seed_verdict(store, run_id, attempt, verifier_replay="pass")
     for _ in range(3):
         attempt = _seed_attempt(store, run_id, brief.campaign_id)
-        _seed_verdict(
-            store, run_id, attempt, verifier_replay="fail", semantic="fail"
-        )
+        _seed_verdict(store, run_id, attempt, verifier_replay="fail", semantic="fail")
     report = audit.audit_run(run_id, db_path=_db_path(store))
     assert all(f.check != "homogeneous_verdicts" for f in report.findings)
 

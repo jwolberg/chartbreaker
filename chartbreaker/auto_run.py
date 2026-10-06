@@ -150,9 +150,7 @@ async def _run_one_iteration(
     with ObservabilityStore() as store:
         # 1. Generate fresh proposals (priority math re-scores against
         #    the run telemetry written by previous iterations).
-        props = proposal_harness.propose(
-            store, n=state.proposals_per_iteration
-        )
+        props = proposal_harness.propose(store, n=state.proposals_per_iteration)
         if not props:
             return None, 0.0
 
@@ -213,7 +211,9 @@ async def auto_run_loop(
     state.write()
     logger.info(
         "auto-run started: pid=%d max_iter=%d max_cost=$%.2f",
-        state.pid, max_iterations, max_cost_usd,
+        state.pid,
+        max_iterations,
+        max_cost_usd,
     )
 
     try:
@@ -223,7 +223,7 @@ async def auto_run_loop(
                 state.stopped = True
                 state.stopped_reason = "stop-file requested"
                 state.notes.append(
-                    f"iteration {i+1}/{max_iterations} skipped: stop requested"
+                    f"iteration {i + 1}/{max_iterations} skipped: stop requested"
                 )
                 state.write()
                 break
@@ -245,7 +245,7 @@ async def auto_run_loop(
             except Exception as exc:  # bound to iteration
                 logger.exception("auto-run iteration %d crashed", i + 1)
                 state.notes.append(
-                    f"iteration {i+1} crashed: {type(exc).__name__}: {exc}"
+                    f"iteration {i + 1} crashed: {type(exc).__name__}: {exc}"
                 )
                 state.iterations_done = i + 1
                 state.write()
@@ -256,12 +256,10 @@ async def auto_run_loop(
             state.iterations_done = i + 1
             state.cost_so_far_usd += run_cost
             state.last_run_id = run_id
-            state.last_iteration_finished_at = datetime.now(
-                tz=timezone.utc
-            ).isoformat()
+            state.last_iteration_finished_at = datetime.now(tz=timezone.utc).isoformat()
             if run_id is None:
                 state.notes.append(
-                    f"iteration {i+1} produced no new proposals — "
+                    f"iteration {i + 1} produced no new proposals — "
                     "Orchestrator may be at coverage saturation"
                 )
             state.write()

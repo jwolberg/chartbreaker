@@ -109,9 +109,7 @@ def _open(db_path: str | Path) -> Iterator[sqlite3.Connection]:
 
 
 def _run_exists(conn: sqlite3.Connection, run_id: str) -> bool:
-    row = conn.execute(
-        "SELECT 1 FROM runs WHERE run_id = ?", (run_id,)
-    ).fetchone()
+    row = conn.execute("SELECT 1 FROM runs WHERE run_id = ?", (run_id,)).fetchone()
     return row is not None
 
 
@@ -440,9 +438,7 @@ _CHECK_FUNCTIONS: tuple = (
 # ---------------------------------------------------------------------------
 
 
-def audit_run(
-    run_id: str, db_path: str | Path | None = None
-) -> AuditReport | None:
+def audit_run(run_id: str, db_path: str | Path | None = None) -> AuditReport | None:
     """Run every check against ``run_id``.
 
     Returns None when ``run_id`` does not exist in the store — the CLI

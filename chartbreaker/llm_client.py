@@ -124,7 +124,9 @@ def _estimate_cost_usd(
         )
         return 0.0
     prompt_price, completion_price = price
-    return (prompt_tokens * prompt_price + completion_tokens * completion_price) / 1_000_000
+    return (
+        prompt_tokens * prompt_price + completion_tokens * completion_price
+    ) / 1_000_000
 
 
 async def _post_with_retry(
@@ -202,7 +204,9 @@ async def chat(
     # OpenAI's gpt-5.x family deprecated `max_tokens` in favor of
     # `max_completion_tokens`. Other providers (OpenRouter, Ollama, Anthropic)
     # still accept `max_tokens` on their /v1/chat/completions surface.
-    token_param = "max_completion_tokens" if role_cfg.provider == "openai" else "max_tokens"
+    token_param = (
+        "max_completion_tokens" if role_cfg.provider == "openai" else "max_tokens"
+    )
     payload: dict = {
         "model": role_cfg.model,
         "messages": messages,

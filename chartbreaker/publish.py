@@ -102,9 +102,7 @@ def issue_body(case: dict[str, Any]) -> str:
     lines.append(f"**Regression case:** `{cid}`")
     lines.append(f"**Subcategory:** {subcat} — {subcat_name}")
     lines.append(f"**Specialist:** {specialist}")
-    lines.append(
-        f"**Severity:** {severity} · **Exploitability:** {exploitability}"
-    )
+    lines.append(f"**Severity:** {severity} · **Exploitability:** {exploitability}")
     lines.append(
         f"**Frozen verdict:** verifier={verifier} · semantic={semantic} · judge={judge_model}"
     )
@@ -115,7 +113,9 @@ def issue_body(case: dict[str, Any]) -> str:
     lines.append("")
     lines.append("## Judge rationale")
     lines.append("")
-    lines.append("> " + (rationale or "_(no rationale recorded)_").replace("\n", "\n> "))
+    lines.append(
+        "> " + (rationale or "_(no rationale recorded)_").replace("\n", "\n> ")
+    )
     lines.append("")
     lines.append("## Reproducer")
     lines.append("")
@@ -152,7 +152,9 @@ def issue_body(case: dict[str, Any]) -> str:
         lines.append("```")
     if multi_turn:
         lines.append("")
-        lines.append(f"**Multi-turn:** {len(multi_turn)} turns; see YAML for full sequence.")
+        lines.append(
+            f"**Multi-turn:** {len(multi_turn)} turns; see YAML for full sequence."
+        )
     lines.append("")
     lines.append("## Verification")
     lines.append("")

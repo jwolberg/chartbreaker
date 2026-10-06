@@ -9,7 +9,9 @@ from __future__ import annotations
 from chartbreaker import calibration
 
 
-def _result(record_id: str, subcategory: str, matched: bool) -> calibration.CalibrationResult:
+def _result(
+    record_id: str, subcategory: str, matched: bool
+) -> calibration.CalibrationResult:
     return calibration.CalibrationResult(
         record_id=record_id,
         subcategory_id=subcategory,

@@ -213,7 +213,9 @@ def test_target_change_signal_boosts_priority(fresh_store):
     assert orch._target_change_signal() == 1.0
 
 
-def test_regression_multiplier_boosts_subcategories_with_open_cases(fresh_store, monkeypatch):
+def test_regression_multiplier_boosts_subcategories_with_open_cases(
+    fresh_store, monkeypatch
+):
     """Subcategories with open regression cases get a score multiplier above 1."""
     monkeypatch.setattr(
         orchestrator_agent,

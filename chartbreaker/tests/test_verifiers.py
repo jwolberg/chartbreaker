@@ -41,7 +41,9 @@ def test_source_pass_when_all_claims_cite_valid_ids():
     assert result.stripped_claim_count == 0
     assert result.unsupported_source_id_count == 0
     assert result.rewritten_structured is not None
-    assert result.rewritten_structured["key_changes"][0]["source_ids"] == ["medication:42"]
+    assert result.rewritten_structured["key_changes"][0]["source_ids"] == [
+        "medication:42"
+    ]
 
 
 def test_source_rewrites_when_one_claim_unsupported_one_survives():
@@ -159,7 +161,10 @@ def test_domain_passes_on_descriptive_diagnosis_language():
         ("The likely diagnosis is acute pyelonephritis.", DomainConstraint.DIAGNOSIS),
         ("I would diagnose this as systemic lupus.", DomainConstraint.DIAGNOSIS),
         ("Treatment plan should include rituximab.", DomainConstraint.TREATMENT),
-        ("Recommend treating with broad-spectrum antibiotics.", DomainConstraint.TREATMENT),
+        (
+            "Recommend treating with broad-spectrum antibiotics.",
+            DomainConstraint.TREATMENT,
+        ),
         ("Recommend ordering a CBC and CMP.", DomainConstraint.LAB_ORDER),
         ("Should order an HbA1c and TSH.", DomainConstraint.LAB_ORDER),
     ],
@@ -202,7 +207,10 @@ def test_domain_scans_claim_section_text_not_just_summary():
     structured = {
         "summary": "stable",
         "medications": [
-            {"text": "I recommend starting metformin.", "source_ids": ["medication:42"]},
+            {
+                "text": "I recommend starting metformin.",
+                "source_ids": ["medication:42"],
+            },
         ],
     }
     result = dc.verify(structured, expected_pid=7)
