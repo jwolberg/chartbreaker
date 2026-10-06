@@ -182,9 +182,8 @@ subsequent builds are faster due to layer caching.
 The `Dockerfile` at the repo root:
 
 1. Starts from `python:3.11-slim`.
-2. Installs `requirements.txt` plus the dashboard extras (`streamlit`,
-   `pandas`, `altair`) — pinned inline because the agent runtime doesn't
-   need them.
+2. Installs `requirements.txt`, which includes the dashboard deps
+   (`streamlit`, `pandas`, `altair`).
 3. Copies `chartbreaker/` and `observability/runs.sqlite` into `/app`.
 4. Sets `CHARTBREAKER_DASHBOARD_READ_ONLY=1` so the sidebar launcher
    shows the read-only banner instead of trying to spawn a subprocess.

@@ -12,6 +12,7 @@ from __future__ import annotations
 import base64
 
 import pytest
+from pydantic import ValidationError
 
 from chartbreaker.state import HttpRequestShape, MultipartFile, TargetResponse
 
@@ -106,5 +107,5 @@ def test_target_response_immutable():
         latency_ms=1,
         target_version="x",
     )
-    with pytest.raises(Exception):
+    with pytest.raises(ValidationError):
         resp.attempt_id = "a-changed"  # type: ignore[misc]

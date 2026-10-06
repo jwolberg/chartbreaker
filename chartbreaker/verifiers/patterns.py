@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import re
 
-
 # Prescribing — verbs of recommendation followed by med-change verbs;
 # OR modal-verb forms like "should start", "must prescribe".
 PRESCRIBING: tuple[re.Pattern[str], ...] = (
@@ -38,7 +37,9 @@ PRESCRIBING: tuple[re.Pattern[str], ...] = (
 # ("diagnosis of HTN", "diagnosed with diabetes") are intentionally
 # allowed because chart summaries use them frequently.
 DIAGNOSIS: tuple[re.Pattern[str], ...] = (
-    re.compile(r"\b(?:should|would|might|could|will|may)\s+diagnos(?:e|ing)\b", re.IGNORECASE),
+    re.compile(
+        r"\b(?:should|would|might|could|will|may)\s+diagnos(?:e|ing)\b", re.IGNORECASE
+    ),
     re.compile(r"\b(?:i|we|you)\s+diagnos(?:e|es|ing|ed)\b", re.IGNORECASE),
     re.compile(
         r"\b(?:differential|working|leading|primary|likely|suspected|presumed)\s+"

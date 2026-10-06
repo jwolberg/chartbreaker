@@ -10,7 +10,9 @@ import pytest
 from chartbreaker import cli
 
 
-def test_attach_auto_path_uses_run_id(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_attach_auto_path_uses_run_id(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """`auto` resolves to <observability_dir>/run-<run_id>.log."""
     monkeypatch.setattr(cli.config, "OBSERVABILITY_DIR", str(tmp_path))
     handler = cli._attach_run_log("abc-123", "auto")

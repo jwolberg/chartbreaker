@@ -128,13 +128,15 @@ def test_v1_db_gets_response_cookie_columns(tmp_path: Path) -> None:
     with ObservabilityStore(db_path=db_path, trace_path=trace_path) as store:
         cols = {
             row[1]
-            for row in store._conn.execute("PRAGMA table_info(target_responses)").fetchall()
+            for row in store._conn.execute(
+                "PRAGMA table_info(target_responses)"
+            ).fetchall()
         }
         assert "response_cookies" in cols
         assert "set_cookie_headers" in cols
-        version = store._conn.execute(
-            "SELECT version FROM schema_version"
-        ).fetchone()[0]
+        version = store._conn.execute("SELECT version FROM schema_version").fetchone()[
+            0
+        ]
         # P4 bumped the canonical schema_version to 3 (proposed_campaigns).
         assert version == 3
 
@@ -142,6 +144,8 @@ def test_v1_db_gets_response_cookie_columns(tmp_path: Path) -> None:
     with ObservabilityStore(db_path=db_path, trace_path=trace_path) as store:
         cols = {
             row[1]
-            for row in store._conn.execute("PRAGMA table_info(target_responses)").fetchall()
+            for row in store._conn.execute(
+                "PRAGMA table_info(target_responses)"
+            ).fetchall()
         }
         assert "response_cookies" in cols

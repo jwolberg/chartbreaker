@@ -20,7 +20,6 @@ import copy
 from dataclasses import dataclass
 from typing import Literal
 
-
 CLAIM_SECTIONS: tuple[str, ...] = (
     "key_changes",
     "medications",

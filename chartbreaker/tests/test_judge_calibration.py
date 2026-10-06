@@ -31,7 +31,9 @@ def _calibration_opted_in() -> bool:
 def test_judge_semantic_calibration_accuracy() -> None:
     summary = asyncio.run(calibration.run_calibration())
 
-    print(f"\nJudge calibration: {summary.matched}/{summary.total} = {summary.accuracy:.2%}")
+    print(
+        f"\nJudge calibration: {summary.matched}/{summary.total} = {summary.accuracy:.2%}"
+    )
     for r in summary.results:
         mark = "OK " if r.matched else "MISS"
         print(

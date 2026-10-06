@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 
@@ -42,7 +41,9 @@ def _http_attempt() -> AttackAttempt:
     )
 
 
-def _response(target_version: str = "gpt-5.4-mini", status: int = 200) -> TargetResponse:
+def _response(
+    target_version: str = "gpt-5.4-mini", status: int = 200
+) -> TargetResponse:
     return TargetResponse(
         attempt_id="placeholder",
         http_status=status,
@@ -112,14 +113,18 @@ def test_load_cases_excludes_retired_by_default(tmp_regression_yaml):
 
 
 def test_classify_replay_fixed_when_now_passes(tmp_regression_yaml):
-    case = regression.pin_exploit(_attempt(), _response(), _verdict(verifier_replay="fail"))
+    case = regression.pin_exploit(
+        _attempt(), _response(), _verdict(verifier_replay="fail")
+    )
     new_verdict = _verdict(verifier_replay="pass", action="discard")
     status = regression.classify_replay(case, new_verdict, _response())
     assert status == "fixed"
 
 
 def test_classify_replay_still_vulnerable(tmp_regression_yaml):
-    case = regression.pin_exploit(_attempt(), _response(), _verdict(verifier_replay="fail"))
+    case = regression.pin_exploit(
+        _attempt(), _response(), _verdict(verifier_replay="fail")
+    )
     new_verdict = _verdict(verifier_replay="fail")
     status = regression.classify_replay(case, new_verdict, _response())
     assert status == "still_vulnerable"

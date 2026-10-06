@@ -29,7 +29,8 @@ def _load_all() -> list[dict]:
         data = yaml.safe_load(f)
     cases = data["cases"] if isinstance(data, dict) and "cases" in data else data
     if not isinstance(cases, list):
-        raise ValueError(f"{SEED_CASES_YAML} did not yield a list of cases")
+        # Malformed file content, not a caller type error.
+        raise ValueError(f"{SEED_CASES_YAML} did not yield a list of cases")  # noqa: TRY004
     return cases
 
 

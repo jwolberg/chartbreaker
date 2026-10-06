@@ -11,6 +11,7 @@ import sqlite3
 from pathlib import Path
 
 import pandas as pd
+import pytest
 
 from chartbreaker.observability import dashboard
 from chartbreaker.observability.store import ObservabilityStore
@@ -125,8 +126,8 @@ def test_safe_json_pretty_returns_pretty_for_valid_json() -> None:
     out = dashboard._safe_json_pretty('{"b":2,"a":1}')
     # Pretty-printed → multi-line with indentation.
     assert "\n" in out
-    assert "\"b\": 2" in out
-    assert "\"a\": 1" in out
+    assert '"b": 2' in out
+    assert '"a": 1' in out
 
 
 def test_safe_json_pretty_passes_through_non_json() -> None:
@@ -166,7 +167,9 @@ def test_rationale_filter_empty_needle_returns_unfiltered() -> None:
         }
     )
     assert len(dashboard._apply_rationale_filter(df, "")) == 3
-    assert len(dashboard._apply_rationale_filter(df, "  ")) == 3  # whitespace = no filter
+    assert (
+        len(dashboard._apply_rationale_filter(df, "  ")) == 3
+    )  # whitespace = no filter
 
 
 def test_rationale_filter_case_insensitive_substring() -> None:
@@ -193,7 +196,9 @@ def test_rationale_filter_handles_empty_dataframe() -> None:
     assert dashboard._apply_rationale_filter(df, "anything").empty
 
 
-def test_check_api_key_prereqs_lists_missing_vars(monkeypatch: "pytest.MonkeyPatch") -> None:
+def test_check_api_key_prereqs_lists_missing_vars(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     # Wipe everything required so we can see the full failure list.
     for var in (
         "CHARTBREAKER_TARGET_USER",
@@ -210,7 +215,7 @@ def test_check_api_key_prereqs_lists_missing_vars(monkeypatch: "pytest.MonkeyPat
 
 
 def test_check_api_key_prereqs_skips_openai_when_semantic_judge_off(
-    monkeypatch: "pytest.MonkeyPatch",
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("CHARTBREAKER_TARGET_USER", "x")
     monkeypatch.setenv("CHARTBREAKER_TARGET_PASSWORD", "x")
@@ -241,12 +246,16 @@ def test_detect_in_flight_run_returns_open_run(tmp_path: Path) -> None:
     row = dashboard._detect_in_flight_run(str(db_path))
     assert row is not None
     assert row["run_id"] == "run-1"
-    assert row["ended_at"] is None if "ended_at" in row else True  # column omitted in select is fine
+    assert (
+        row["ended_at"] is None if "ended_at" in row else True
+    )  # column omitted in select is fine
 
 
 def test_detect_in_flight_run_handles_missing_db_file(tmp_path: Path) -> None:
     """If the DB file doesn't exist yet (fresh install), no in-flight run."""
-    assert dashboard._detect_in_flight_run(str(tmp_path / "does-not-exist.sqlite")) is None
+    assert (
+        dashboard._detect_in_flight_run(str(tmp_path / "does-not-exist.sqlite")) is None
+    )
 
 
 def test_live_activity_query_returns_recent_events(tmp_path: Path) -> None:

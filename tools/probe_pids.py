@@ -28,7 +28,6 @@ import httpx  # noqa: E402
 from chartbreaker import config  # noqa: E402
 from chartbreaker.target_endpoints import LOGIN_SUBMIT_PATH  # noqa: E402
 
-
 _PUBPID_DATA_VALUE_RE = re.compile(
     r"pubpid[^<>]*?data-value=['\"]([^'\"]+)['\"]", re.IGNORECASE
 )
@@ -117,11 +116,7 @@ async def main() -> int:
         for pid in range(args.start, args.end + 1):
             row = await _probe(client, pid)
             results.append(row)
-            is_hit = (
-                row["landed_on_chart"]
-                and row["has_csrf"]
-                and row["status"] == 200
-            )
+            is_hit = row["landed_on_chart"] and row["has_csrf"] and row["status"] == 200
             if is_hit or args.show_misses:
                 print(
                     f"  pid={row['pid']:>5} "

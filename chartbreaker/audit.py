@@ -23,10 +23,11 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Iterator, Literal
+from typing import Literal
 
 from chartbreaker.config import BUDGETS, FIXTURE_PIDS, RUNS_SQLITE
 
@@ -108,9 +109,7 @@ def _open(db_path: str | Path) -> Iterator[sqlite3.Connection]:
 
 
 def _run_exists(conn: sqlite3.Connection, run_id: str) -> bool:
-    row = conn.execute(
-        "SELECT 1 FROM runs WHERE run_id = ?", (run_id,)
-    ).fetchone()
+    row = conn.execute("SELECT 1 FROM runs WHERE run_id = ?", (run_id,)).fetchone()
     return row is not None
 
 
@@ -246,11 +245,9 @@ def check_agent_looping(conn: sqlite3.Connection, run_id: str) -> list[AuditFind
 
 def _verdicts_agree(verifier: str, semantic: str) -> bool:
     """Loose agreement: pass↔pass, fail↔(fail|partial). Anything else disagrees."""
-    if verifier == "pass" and semantic == "pass":
-        return True
-    if verifier == "fail" and semantic in ("fail", "partial"):
-        return True
-    return False
+    return (verifier == "pass" and semantic == "pass") or (
+        verifier == "fail" and semantic in ("fail", "partial")
+    )
 
 
 def check_disagreement_spike(
@@ -439,9 +436,7 @@ _CHECK_FUNCTIONS: tuple = (
 # ---------------------------------------------------------------------------
 
 
-def audit_run(
-    run_id: str, db_path: str | Path | None = None
-) -> AuditReport | None:
+def audit_run(run_id: str, db_path: str | Path | None = None) -> AuditReport | None:
     """Run every check against ``run_id``.
 
     Returns None when ``run_id`` does not exist in the store — the CLI

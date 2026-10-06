@@ -18,15 +18,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 
 # Install dependencies first so Docker layer cache survives source edits.
-# The repo's requirements.txt covers the agent runtime; the dashboard
-# extras (streamlit / pandas / altair) are not pinned there, so we list
-# them inline. Bump these pins together with the local versions.
+# requirements.txt covers both the agent runtime and the dashboard
+# (streamlit / pandas / altair).
 COPY requirements.txt /app/requirements.txt
-RUN pip install --no-cache-dir -r /app/requirements.txt \
- && pip install --no-cache-dir \
-        streamlit==1.47.1 \
-        pandas==2.2.2 \
-        altair==5.5.0
+RUN pip install --no-cache-dir -r /app/requirements.txt
 
 # Application code + sqlite snapshot. The dashboard resolves
 # observability/runs.sqlite as a *relative* path (see chartbreaker/config.py),

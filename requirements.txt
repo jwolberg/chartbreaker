@@ -1,15 +1,16 @@
-# ChartBreaker runtime dependencies. Python 3.10+.
+# ChartBreaker runtime dependencies. Python 3.10+ (CI runs 3.10; the
+# dashboard image in Dockerfile runs 3.11).
 # Pinned per docs/PROJECT_STRATEGY.md § Release & Change Management.
+# Dev/test tooling lives in requirements-dev.txt.
 
 httpx>=0.28.1,<1.0.0
 pydantic>=2.9.2,<3.0.0
 python-dotenv>=1.0.1,<2.0.0
 pyyaml>=6.0.2,<7.0.0
 
-# Dev tooling (would normally live in requirements-dev.txt; kept here for MVP simplicity)
-pytest>=9.0,<10.0
-
-# Added incrementally as later phases land:
-#   langgraph (P1-T15)
-#   streamlit (P2-T11)
-#   anthropic (optional, only if MODEL_REGISTRY points Judge/Scribe at Anthropic)
+# Observability dashboard (chartbreaker/observability/dashboard.py).
+# Patch-level ranges only: the deployed Cloud Run image was validated on
+# these versions; bump deliberately and re-check the dashboard.
+streamlit~=1.47.1
+pandas~=2.2.2
+altair~=5.5.0

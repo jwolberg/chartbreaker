@@ -1,0 +1,8 @@
+# ChartBreaker dev/test dependencies: runtime deps plus test tooling.
+#   pip install -r requirements-dev.txt
+
+-r requirements.txt
+
+pytest>=9.0,<10.0
+pytest-asyncio>=1.3.0,<2.0.0
+ruff==0.16.10

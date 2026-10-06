@@ -58,9 +58,7 @@ def test_parses_3_turn_sequence(monkeypatch: pytest.MonkeyPatch):
 
 
 def test_caps_at_four_turns(monkeypatch: pytest.MonkeyPatch):
-    fake = _make_fake_chat(
-        '{"turns": ["t1", "t2", "t3", "t4", "t5", "t6"]}'
-    )
+    fake = _make_fake_chat('{"turns": ["t1", "t2", "t3", "t4", "t5", "t6"]}')
     monkeypatch.setattr(multi_turn_specialist, "chat", fake)
     attempt, _ = asyncio.run(multi_turn_specialist.generate(_brief("3a")))
     assert len(attempt.multi_turn_sequence) == 4
@@ -81,9 +79,7 @@ def test_rejects_non_json(monkeypatch: pytest.MonkeyPatch):
 
 
 def test_strips_code_fences(monkeypatch: pytest.MonkeyPatch):
-    fake = _make_fake_chat(
-        '```json\n{"turns": ["t1", "t2"]}\n```'
-    )
+    fake = _make_fake_chat('```json\n{"turns": ["t1", "t2"]}\n```')
     monkeypatch.setattr(multi_turn_specialist, "chat", fake)
     attempt, _ = asyncio.run(multi_turn_specialist.generate(_brief("1d")))
     assert attempt.multi_turn_sequence == ["t1", "t2"]

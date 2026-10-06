@@ -100,7 +100,9 @@ def _parse_llm_output(text: str, expected_shape: str) -> tuple[str | None, str |
     prompt = payload.get(_SHAPE_PROMPT)
     chart_text = payload.get(_SHAPE_CHART)
     prompt = prompt if isinstance(prompt, str) and prompt.strip() else None
-    chart_text = chart_text if isinstance(chart_text, str) and chart_text.strip() else None
+    chart_text = (
+        chart_text if isinstance(chart_text, str) and chart_text.strip() else None
+    )
 
     if prompt is None and chart_text is None:
         raise InjectionGenerationError(

@@ -15,7 +15,6 @@ import pytest
 
 from chartbreaker import cli, regression
 
-
 # ---------------------------------------------------------------------------
 # _classify_regress_summary
 # ---------------------------------------------------------------------------
@@ -67,7 +66,7 @@ def test_strict_fail_statuses_cover_drift_and_new_regression():
 @pytest.fixture
 def empty_suite(monkeypatch):
     """Mock the regression suite to be empty so the sweep returns early."""
-    monkeypatch.setattr(regression, "load_cases", lambda: [])
+    monkeypatch.setattr(regression, "load_cases", list)
 
 
 def test_empty_suite_human_output_has_summary_line(empty_suite, capsys):
@@ -79,9 +78,7 @@ def test_empty_suite_human_output_has_summary_line(empty_suite, capsys):
 
 
 def test_empty_suite_json_output_shape(empty_suite, capsys):
-    rc = asyncio.run(
-        cli.run_regression_sweep(operator="pytest", emit_json=True)
-    )
+    rc = asyncio.run(cli.run_regression_sweep(operator="pytest", emit_json=True))
     out = capsys.readouterr().out
     assert rc == 0
     payload = json.loads(out)
@@ -96,9 +93,7 @@ def test_empty_suite_json_output_shape(empty_suite, capsys):
 
 
 def test_empty_suite_strict_mode_still_exits_zero(empty_suite, capsys):
-    rc = asyncio.run(
-        cli.run_regression_sweep(operator="pytest", strict=True)
-    )
+    rc = asyncio.run(cli.run_regression_sweep(operator="pytest", strict=True))
     assert rc == 0
 
 
@@ -113,9 +108,7 @@ def test_healthcheck_short_circuits_when_target_unreachable(monkeypatch, capsys)
 
     monkeypatch.setattr(cli, "_target_reachable", _down)
     rc = asyncio.run(
-        cli.run_regression_sweep(
-            operator="pytest", require_healthcheck=True
-        )
+        cli.run_regression_sweep(operator="pytest", require_healthcheck=True)
     )
     assert rc == 0
     err = capsys.readouterr().err
@@ -140,9 +133,7 @@ def test_healthcheck_short_circuits_in_json_mode(monkeypatch, capsys):
     assert payload == {"skipped": True, "reason": "target_unreachable"}
 
 
-def test_healthcheck_proceeds_when_target_reachable(
-    monkeypatch, empty_suite, capsys
-):
+def test_healthcheck_proceeds_when_target_reachable(monkeypatch, empty_suite, capsys):
     async def _up():
         return True
 

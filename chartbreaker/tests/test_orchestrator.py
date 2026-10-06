@@ -2,8 +2,17 @@
 
 from __future__ import annotations
 
+import pytest
+
 from chartbreaker.agents import orchestrator_agent
-from chartbreaker.state import CampaignBrief
+from chartbreaker.config import Budgets
+from chartbreaker.observability.store import ObservabilityStore
+from chartbreaker.state import (
+    AttackAttempt,
+    CampaignBrief,
+    CostObservation,
+    TargetResponse,
+)
 
 
 def test_severity_weight_orders_correctly():
@@ -57,16 +66,6 @@ def test_plan_initial_briefs_attaches_seed_for_injector_subcategories():
 # ---------------------------------------------------------------------------
 # Per-tick Orchestrator — telemetry-driven priority re-scoring.
 # ---------------------------------------------------------------------------
-
-import pytest
-
-from chartbreaker.config import Budgets
-from chartbreaker.observability.store import ObservabilityStore
-from chartbreaker.state import (
-    AttackAttempt,
-    CostObservation,
-    TargetResponse,
-)
 
 
 @pytest.fixture
@@ -213,7 +212,9 @@ def test_target_change_signal_boosts_priority(fresh_store):
     assert orch._target_change_signal() == 1.0
 
 
-def test_regression_multiplier_boosts_subcategories_with_open_cases(fresh_store, monkeypatch):
+def test_regression_multiplier_boosts_subcategories_with_open_cases(
+    fresh_store, monkeypatch
+):
     """Subcategories with open regression cases get a score multiplier above 1."""
     monkeypatch.setattr(
         orchestrator_agent,

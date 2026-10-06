@@ -45,10 +45,7 @@ def _load_cases_raw() -> list[dict[str, Any]]:
         data = yaml.safe_load(f)
     if data is None:
         return []
-    if isinstance(data, dict):
-        cases = data.get("cases", [])
-    else:
-        cases = data
+    cases = data.get("cases", []) if isinstance(data, dict) else data
     return list(cases) if isinstance(cases, list) else []
 
 

@@ -33,7 +33,12 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent
 _DOTENV_PATH = _REPO_ROOT / ".env"
 load_dotenv(_DOTENV_PATH)
 
-from chartbreaker import calibration, config, llm_client, regression  # noqa: E402  (after load_dotenv)
+from chartbreaker import (
+    calibration,
+    config,
+    llm_client,
+    regression,
+)
 from chartbreaker.agents import orchestrator_agent, red_team_lead
 from chartbreaker.agents.judge_agent import judge, judge_with_semantic
 from chartbreaker.observability.store import ObservabilityStore
@@ -113,7 +118,9 @@ async def _run_one_brief(
 
     if cost is not None:
         # LLM specialist — re-bind cost to the attempt_id we just generated.
-        store.write_cost(run_id, cost.model_copy(update={"attempt_id": attempt.attempt_id}))
+        store.write_cost(
+            run_id, cost.model_copy(update={"attempt_id": attempt.attempt_id})
+        )
     else:
         # Deterministic specialist — record $0 cost for accounting completeness.
         store.write_cost(
@@ -228,7 +235,7 @@ async def run_mvp_loop(
     # the verbose trace survives the run. "auto" → observability/run-<run_id>.log.
     log_handler = _attach_run_log(run_id, log_file) if log_file is not None else None
 
-    print(f"ChartBreaker MVP loop")
+    print("ChartBreaker MVP loop")
     print(f"  target:   {config.TARGET_BASE_URL}")
     print(f"  run_id:   {run_id}")
     print(f"  operator: {operator}")
@@ -267,7 +274,7 @@ async def run_mvp_loop(
                             store,
                             enable_semantic_judge=enable_semantic_judge,
                         )
-                    except Exception as exc:  # noqa: BLE001 — bound to brief boundary
+                    except Exception as exc:  # bound to brief boundary
                         # A single specialist failure (e.g. LLM returns bad
                         # JSON, target returns malformed cookie, transient
                         # network error) used to abort the whole run because
@@ -279,7 +286,8 @@ async def run_mvp_loop(
                         # post-run.
                         logger.exception(
                             "brief %s (Cat %s) failed; continuing",
-                            brief.campaign_id, brief.subcategory_id,
+                            brief.campaign_id,
+                            brief.subcategory_id,
                         )
                         print(
                             f"    ✗ Cat {brief.subcategory_id} specialist "
@@ -433,7 +441,7 @@ async def _target_reachable() -> bool:
             # GET — some hosts answer HEAD with 4xx even when up.
             r = await client.get(config.TARGET_BASE_URL)
         return r.status_code < 500
-    except Exception:
+    except Exception:  # noqa: BLE001 — any failure (bad URL, TLS, network) = unreachable
         return False
 
 
@@ -457,19 +465,18 @@ async def run_regression_sweep(
     Returns a process exit code: 0 clean / 1 in strict mode if any case
     classifies to a fail status / 0 with warning if healthcheck fails.
     """
-    if require_healthcheck:
-        if not await _target_reachable():
-            msg = (
-                f"WARNING: target {config.TARGET_BASE_URL} is unreachable; "
-                "skipping regression sweep (exit 0)."
-            )
-            if emit_json:
-                import json as _json
+    if require_healthcheck and not await _target_reachable():
+        msg = (
+            f"WARNING: target {config.TARGET_BASE_URL} is unreachable; "
+            "skipping regression sweep (exit 0)."
+        )
+        if emit_json:
+            import json as _json
 
-                print(_json.dumps({"skipped": True, "reason": "target_unreachable"}))
-            else:
-                print(msg, file=sys.stderr)
-            return 0
+            print(_json.dumps({"skipped": True, "reason": "target_unreachable"}))
+        else:
+            print(msg, file=sys.stderr)
+        return 0
 
     run_id = str(uuid4())
     cli_command = " ".join(sys.argv)
@@ -477,7 +484,7 @@ async def run_regression_sweep(
     per_case: list[dict] = []
 
     if not emit_json:
-        print(f"ChartBreaker regression sweep")
+        print("ChartBreaker regression sweep")
         print(f"  target:   {config.TARGET_BASE_URL}")
         print(f"  run_id:   {run_id}")
         print(f"  operator: {operator}")
@@ -906,7 +913,9 @@ def main() -> None:
         sys.exit(_audit_run_cli(args, _audit))
     elif args.cmd == "calibrate":
         summary = asyncio.run(calibration.run_calibration())
-        print(f"\nJudge calibration: {summary.matched}/{summary.total} = {summary.accuracy:.2%}")
+        print(
+            f"\nJudge calibration: {summary.matched}/{summary.total} = {summary.accuracy:.2%}"
+        )
         for result in summary.results:
             mark = "OK " if result.matched else "MISS"
             print(

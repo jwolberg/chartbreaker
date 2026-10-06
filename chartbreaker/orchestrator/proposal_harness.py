@@ -40,9 +40,10 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Awaitable, Callable, Literal
+from typing import Literal
 
 from chartbreaker.agents import orchestrator_agent, red_team_lead
 from chartbreaker.config import BUDGETS
@@ -69,7 +70,9 @@ _AVG_JUDGE_COMPLETION_TOKENS = 200
 # attempt LLM cost is strictly the Judge follow-up. LLM specialists pay
 # for both. Kept here rather than imported from red_team_lead so the
 # harness doesn't break if the routing table grows new shapes.
-_DETERMINISTIC_SPECIALISTS: frozenset[str] = frozenset({"saboteur", "cracker", "glutton"})
+_DETERMINISTIC_SPECIALISTS: frozenset[str] = frozenset(
+    {"saboteur", "cracker", "glutton"}
+)
 
 _MIN_MUTATION_BUDGET = 1
 _MAX_MUTATION_BUDGET = 20
@@ -277,12 +280,16 @@ def _row_to_proposal(row: dict) -> ProposedCampaign:
 
 def list_pending(store: ObservabilityStore) -> list[ProposedCampaign]:
     """Return rows with status='proposed', most-recent first."""
-    return [_row_to_proposal(r) for r in store.list_proposed_campaigns(status="proposed")]
+    return [
+        _row_to_proposal(r) for r in store.list_proposed_campaigns(status="proposed")
+    ]
 
 
 def list_approved(store: ObservabilityStore) -> list[ProposedCampaign]:
     """Return rows with status='approved' (awaiting batch launch)."""
-    return [_row_to_proposal(r) for r in store.list_proposed_campaigns(status="approved")]
+    return [
+        _row_to_proposal(r) for r in store.list_proposed_campaigns(status="approved")
+    ]
 
 
 def list_all(store: ObservabilityStore) -> list[ProposedCampaign]:
@@ -290,7 +297,9 @@ def list_all(store: ObservabilityStore) -> list[ProposedCampaign]:
     return [_row_to_proposal(r) for r in store.list_proposed_campaigns()]
 
 
-def get_proposal(store: ObservabilityStore, proposal_id: str) -> ProposedCampaign | None:
+def get_proposal(
+    store: ObservabilityStore, proposal_id: str
+) -> ProposedCampaign | None:
     row = store.get_proposed_campaign(proposal_id)
     return _row_to_proposal(row) if row else None
 
@@ -452,7 +461,7 @@ def propose(
         narration_results = asyncio.run(_narrate_all())
 
     out: list[ProposedCampaign] = []
-    for (brief, specialist), result in zip(candidates, narration_results):
+    for (brief, specialist), result in zip(candidates, narration_results, strict=True):
         score = orchestrator_agent.priority_score(
             orchestrator_agent._severity_for_subcategory(  # noqa: SLF001
                 brief.subcategory_id
