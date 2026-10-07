@@ -38,26 +38,34 @@ jobs:
       CHARTBREAKER_LOGIN_PROBE_BUDGET: '2'
 
     steps:
+      # `secrets` isn't available in step `if:` expressions (using it
+      # invalidates the whole workflow file), so gate on the job-level env
+      # copy instead. Every later step carries the inverse condition so a
+      # missing secret actually skips the gate rather than failing it.
       - name: Skip on forks without credentials
-        if: ${{ secrets.CHARTBREAKER_TARGET_USER == '' }}
+        if: ${{ env.CHARTBREAKER_TARGET_USER == '' }}
         run: |
           echo "::notice::CHARTBREAKER_TARGET_USER secret not configured; skipping regression gate."
           exit 0
 
       - name: Check out repo
+        if: ${{ env.CHARTBREAKER_TARGET_USER != '' }}
         uses: actions/checkout@v4
 
       - name: Set up Python 3.10
+        if: ${{ env.CHARTBREAKER_TARGET_USER != '' }}
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
 
       - name: Install dependencies
+        if: ${{ env.CHARTBREAKER_TARGET_USER != '' }}
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
       - name: Run regression gate (strict + JSON + healthcheck)
+        if: ${{ env.CHARTBREAKER_TARGET_USER != '' }}
         # --strict: exit non-zero on drift_flagged or new_regression.
         # --require-target-healthcheck: silently exit 0 if TARGET_BASE_URL
         #   is unreachable (CI distinguishes outage from regression).
@@ -77,7 +85,7 @@ jobs:
 
       - name: Upload regression report
         uses: actions/upload-artifact@v4
-        if: always()
+        if: ${{ always() && env.CHARTBREAKER_TARGET_USER != '' }}
         with:
           name: regression-gate-${{ github.run_id }}
           path: regression.json
